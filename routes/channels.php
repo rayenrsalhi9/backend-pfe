@@ -20,8 +20,6 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 });
 
 
-Broadcast::channel('conversation', function ($user,$id) {
-    $output = new ConsoleOutput();
-    $output->writeln('ddddddddddddddddddd');
-    return true;
+Broadcast::channel('conversation.{id}', function ($user, $id) {
+    return $user->conversations()->where('conversations.id', $id)->exists();
 });
