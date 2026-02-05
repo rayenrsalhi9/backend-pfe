@@ -1,0 +1,138 @@
+
+@font-face {
+  font-family: 'Dancing Script', cursive;
+  src: url('/fonts/DancingScript-Regular.ttf');
+}
+
+[v-cloak] {
+  display: none !important;
+}
+
+/**
+ If default border color is needed apply the CSS below
+
+ *, :after, :before {
+    border-color: rgb(var(--color-neutral-200));
+}
+*/
+
+@layer components {
+  .link {
+    @apply text-primary-600 hover:text-primary-900 dark:text-primary-300 dark:hover:text-primary-400;
+  }
+
+  /* General */
+  .form-input {
+    @apply block w-full text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 disabled:bg-neutral-200;
+  }
+
+  .form-textarea {
+    @apply block w-full text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 disabled:bg-neutral-200;
+  }
+
+  .form-select {
+    @apply block w-full text-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 disabled:bg-neutral-200;
+  }
+
+  .form-radio {
+    @apply h-4 w-4 border-neutral-300 text-primary-600 focus:ring-primary-500 disabled:opacity-60 dark:border-neutral-400;
+  }
+
+  .form-check {
+    @apply h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 disabled:opacity-60 dark:border-neutral-400;
+  }
+
+  .form-input-sm,
+  .form-select-sm {
+    @apply px-2.5 py-1.5;
+  }
+
+  .form-input-lg,
+  .form-select-lg {
+    @apply px-4 py-2.5;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-60;
+  }
+
+  .btn-primary {
+    @apply border border-transparent bg-primary-600 text-white shadow-sm focus:ring-primary-500 hover:bg-primary-700;
+  }
+
+  .btn-secondary {
+    @apply border border-transparent bg-primary-100 text-primary-700 shadow-sm focus:ring-primary-400 hover:bg-primary-200;
+  }
+
+  .btn-success {
+    @apply border border-transparent bg-success-500 text-white shadow-sm focus:ring-success-400 hover:bg-success-600;
+  }
+
+  .btn-danger {
+    @apply border border-transparent bg-danger-600 text-white shadow-sm focus:ring-danger-500 hover:bg-danger-700;
+  }
+
+  .btn-white {
+    @apply border border-neutral-300 bg-white text-neutral-700 shadow-sm hover:bg-neutral-50 dark:border-neutral-500 dark:bg-neutral-700 dark:text-white dark:hover:bg-neutral-600;
+  }
+
+  .btn-sm,
+  .btn-sm.only-icon {
+    @apply px-3 py-2 text-xs leading-4;
+  }
+
+  .btn-md,
+  .btn-md.only-icon {
+    @apply px-4 py-2 text-sm;
+  }
+
+  .btn-lg {
+    @apply px-4 py-2 text-base;
+  }
+
+  .btn-lg.only-icon {
+    @apply px-4 py-2.5;
+  }
+}
+
+.flip-list-move {
+  transition: transform 0.6s;
+}
+
+.drag-ghost {
+  @apply rounded-md border border-dashed border-neutral-400 opacity-60;
+}
+
+.mention {
+  @apply rounded-md bg-neutral-100 py-0.5 px-1 text-sm text-neutral-800;
+}
+
+/* z-index fixes */
+
+#_cbhtml #divSnippetList,
+.is-ui #divSnippetList {
+  z-index: 1000;
+}
+
+.dialog {
+  z-index: 1050;
+}
+
+.v-popper--theme-dropdown.v-popper__popper--shown,
+.v-popper--theme-popover.v-popper__popper--shown {
+  z-index: 1150;
+}
+
+.notification,
+.notifications {
+  z-index: 1200;
+}
+
+.v-popper--theme-tooltip {
+  z-index: 1250;
+}
+
+.confetti {
+  z-index: 1350;
+}
