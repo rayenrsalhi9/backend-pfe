@@ -155,7 +155,9 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
      */
     public function updateResponseAuditTrail($id, $data)
     {
-        $auditTrail = ResponseAuditTrails::find($id);
+        $auditTrail = ResponseAuditTrails::find('id', $id)
+            ->where('isDeleted', false)
+            ->first();
 
         if ($auditTrail) {
             $auditTrail->update($data);
@@ -173,7 +175,9 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
      */
     public function deleteResponseAuditTrail($id)
     {
-        $auditTrail = ResponseAuditTrails::find($id);
+        $auditTrail = ResponseAuditTrails::find('id', $id)
+            ->where('isDeleted', false)
+            ->first();
 
         if ($auditTrail) {
             $auditTrail->isDeleted = true;
