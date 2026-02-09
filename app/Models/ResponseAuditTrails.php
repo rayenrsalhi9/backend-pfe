@@ -4,7 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Builder;
+
 use Illuminate\Notifications\Notifiable;
 use App\Traits\Uuids;
 use Ramsey\Uuid\Uuid;
@@ -12,7 +13,7 @@ use Illuminate\Support\Facades\Auth;
 
 class ResponseAuditTrails extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory;
     use Notifiable, Uuids;
     
     protected $table = 'response_audit_trails';
@@ -70,6 +71,10 @@ class ResponseAuditTrails extends Model
                 $userId = Auth::id();
                 $model->modifiedBy = $userId;
             }
+        });
+        
+        static::addGlobalScope('isDeleted', function (Builder $builder) {
+            $builder->where('isDeleted', '=', false);
         });
     }
 }

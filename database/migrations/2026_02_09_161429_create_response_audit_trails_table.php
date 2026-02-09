@@ -28,7 +28,7 @@ return new class extends Migration
             $table->boolean('isDeleted')->default(false);
             $table->dateTime('createdDate');
             $table->dateTime('modifiedDate');
-            $table->softDeletes()->nullable();
+
             
             // Foreign key constraints
             $table->foreign('forumId')->references('id')->on('forums')->onDelete('cascade');

@@ -20,8 +20,7 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
      */
     public function getResponseAuditTrails($queryString)
     {
-        $query = ResponseAuditTrails::with(['forum', 'user'])
-            ->where('isDeleted', false);
+        $query = ResponseAuditTrails::with(['forum', 'user']);
 
         // Apply filters
         if (!empty($queryString->forumId)) {
@@ -101,7 +100,6 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
     {
         return ResponseAuditTrails::with(['forum', 'user'])
             ->where('id', $id)
-            ->where('isDeleted', false)
             ->first();
     }
 
@@ -113,7 +111,7 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
      */
     public function getResponseAuditTrailsCount($queryString)
     {
-        $query = ResponseAuditTrails::where('isDeleted', false);
+        $query = ResponseAuditTrails::query();
 
         // Apply the same filters as getResponseAuditTrails
         if (!empty($queryString->forumId)) {
@@ -203,7 +201,9 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
         $auditTrail = ResponseAuditTrails::find($id);
         
         if ($auditTrail) {
-            return $auditTrail->delete();
+            $auditTrail->isDeleted = true;
+            $auditTrail->save();
+            return true;
         }
         
         return false;
@@ -263,7 +263,6 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
     public function getUsersDropdown()
     {
         return Users::select('id', 'firstName', 'lastName')
-            ->where('isDeleted', false)
             ->orderBy('firstName')
             ->get()
             ->map(function ($user) {
