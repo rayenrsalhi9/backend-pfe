@@ -11,6 +11,7 @@ use App\Models\ResponseAuditTrails;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class ForumsController extends Controller
 {
@@ -153,16 +154,20 @@ class ForumsController extends Controller
         $comment->comment = $request->comment;
         $comment->save();
 
-        // Create audit trail entry
-        $audit = new ResponseAuditTrails();
-        $audit->forumId = $forum->id;
-        $audit->responseId = $comment->id;
-        $audit->responseType = 'comment';
-        $audit->operationName = 'Created';
-        $audit->responseContent = $request->comment;
-        $audit->ipAddress = $request->ip();
-        $audit->userAgent = $request->userAgent();
-        $audit->save();
+        // Create audit trail entry (non-blocking after comment creation successful)
+        try {
+            $audit = new ResponseAuditTrails();
+            $audit->forumId = $forum->id;
+            $audit->responseId = $comment->id;
+            $audit->responseType = 'comment';
+            $audit->operationName = 'Created';
+            $audit->responseContent = $request->comment;
+            $audit->ipAddress = $request->ip();
+            $audit->userAgent = $request->userAgent();
+            $audit->save();
+        } catch (\Throwable $th) {
+            Log::error($th->getMessage());
+        }
 
         $response = $forum->load('category', 'creator',  'reactions', 'reactionsUp', 'reactionsDown', 'reactionsHeart', 'reactions.user', 'comments', 'comments.user');
 
