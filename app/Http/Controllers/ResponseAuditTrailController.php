@@ -28,7 +28,7 @@ class ResponseAuditTrailController extends Controller
     {
         try {
             $queryString = (object) $request->all();
-            
+
             // Set default values
             $queryString->pageSize = $queryString->pageSize ?? 50;
             $queryString->skip = $queryString->skip ?? 0;
@@ -41,22 +41,20 @@ class ResponseAuditTrailController extends Controller
             $column = in_array($orderParts[0], $allowedOrderColumns) ? $orderParts[0] : 'createdDate';
             $direction = in_array(strtolower($orderParts[1] ?? 'desc'), $allowedDirections) ? $orderParts[1] : 'desc';
             $queryString->orderBy = "$column $direction";
-            
+
             $result = $this->responseAuditTrailRepository->getResponseAuditTrails($queryString);
-            
+
             return response()->json($result['data'])->withHeaders([
                 'totalCount' => $result['totalCount'],
                 'pageSize' => $result['pageSize'],
                 'skip' => $result['skip']
             ]);
-            
         } catch (QueryException $e) {
             Log::error('Database error in response audit: ' . $e->getMessage());
             return response()->json([
                 'error' => 'Database error occurred',
                 'message' => 'Unable to retrieve audit data at this time'
             ], 500);
-            
         } catch (Exception $e) {
             Log::error('Unexpected error in response audit: ' . $e->getMessage());
             return response()->json([
@@ -76,16 +74,15 @@ class ResponseAuditTrailController extends Controller
     {
         try {
             $auditTrail = $this->responseAuditTrailRepository->getResponseAuditTrailById($id);
-            
+
             if (!$auditTrail) {
                 return response()->json([
                     'error' => 'Not found',
                     'message' => 'Response audit trail not found'
                 ], 404);
             }
-            
+
             return response()->json($auditTrail);
-            
         } catch (Exception $e) {
             Log::error('Error fetching response audit trail: ' . $e->getMessage());
             return response()->json([
@@ -106,11 +103,10 @@ class ResponseAuditTrailController extends Controller
         try {
             $year = $request->get('year');
             $month = $request->get('month');
-            
+
             $transactions = $this->responseAuditTrailRepository->getResponseTransactions($year, $month);
-            
+
             return response()->json($transactions);
-            
         } catch (Exception $e) {
             Log::error('Error fetching response transactions: ' . $e->getMessage());
             return response()->json([
@@ -129,9 +125,8 @@ class ResponseAuditTrailController extends Controller
     {
         try {
             $forums = $this->responseAuditTrailRepository->getForumsDropdown();
-            
+
             return response()->json($forums);
-            
         } catch (Exception $e) {
             Log::error('Error fetching forums dropdown: ' . $e->getMessage());
             return response()->json([
@@ -150,9 +145,8 @@ class ResponseAuditTrailController extends Controller
     {
         try {
             $users = $this->responseAuditTrailRepository->getUsersDropdown();
-            
+
             return response()->json($users);
-            
         } catch (Exception $e) {
             Log::error('Error fetching users dropdown: ' . $e->getMessage());
             return response()->json([
@@ -170,22 +164,21 @@ class ResponseAuditTrailController extends Controller
      */
     public function createResponseAuditTrail(Request $request)
     {
-        try {
-            $validatedData = $request->validate([
-                'forumId' => 'required|uuid|exists:forums,id',
-                'responseId' => 'required|uuid',
-                'responseType' => 'required|in:comment,reaction',
-                'operationName' => 'required|in:Created,Updated,Deleted',
-                'responseContent' => 'nullable|string',
-                'previousContent' => 'nullable|string',
-                'ipAddress' => 'nullable|ip',
-                'userAgent' => 'nullable|string'
-            ]);
+        $validatedData = $request->validate([
+            'forumId' => 'required|uuid|exists:forums,id',
+            'responseId' => 'required|uuid',
+            'responseType' => 'required|in:comment,reaction',
+            'operationName' => 'required|in:Created,Updated,Deleted',
+            'responseContent' => 'nullable|string',
+            'previousContent' => 'nullable|string',
+            'ipAddress' => 'nullable|ip',
+            'userAgent' => 'nullable|string'
+        ]);
 
+        try {
             $auditTrail = $this->responseAuditTrailRepository->createResponseAuditTrail($validatedData);
-            
+
             return response()->json($auditTrail, 201);
-            
         } catch (Exception $e) {
             Log::error('Error creating response audit trail: ' . $e->getMessage());
             return response()->json([
@@ -204,25 +197,24 @@ class ResponseAuditTrailController extends Controller
      */
     public function updateResponseAuditTrail($id, Request $request)
     {
-        try {
-            $validatedData = $request->validate([
-                'responseContent' => 'nullable|string',
-                'previousContent' => 'nullable|string',
-                'ipAddress' => 'nullable|ip',
-                'userAgent' => 'nullable|string'
-            ]);
+        $validatedData = $request->validate([
+            'responseContent' => 'nullable|string',
+            'previousContent' => 'nullable|string',
+            'ipAddress' => 'nullable|ip',
+            'userAgent' => 'nullable|string'
+        ]);
 
+        try {
             $auditTrail = $this->responseAuditTrailRepository->updateResponseAuditTrail($id, $validatedData);
-            
+
             if (!$auditTrail) {
                 return response()->json([
                     'error' => 'Not found',
                     'message' => 'Response audit trail not found'
                 ], 404);
             }
-            
+
             return response()->json($auditTrail);
-            
         } catch (Exception $e) {
             Log::error('Error updating response audit trail: ' . $e->getMessage());
             return response()->json([
@@ -242,18 +234,17 @@ class ResponseAuditTrailController extends Controller
     {
         try {
             $deleted = $this->responseAuditTrailRepository->deleteResponseAuditTrail($id);
-            
+
             if (!$deleted) {
                 return response()->json([
                     'error' => 'Not found',
                     'message' => 'Response audit trail not found'
                 ], 404);
             }
-            
+
             return response()->json([
                 'message' => 'Response audit trail deleted successfully'
             ]);
-            
         } catch (Exception $e) {
             Log::error('Error deleting response audit trail: ' . $e->getMessage());
             return response()->json([
