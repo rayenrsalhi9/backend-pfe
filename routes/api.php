@@ -428,11 +428,13 @@ Route::prefix('forums')->group(function () {
 });
 
 Route::prefix('response-audit')->controller(ResponseAuditTrailController::class)->group(function () {
-    Route::get('', 'getResponseAuditTrails');
-    Route::get('get/{id}', 'getResponseAuditTrail');
-    Route::get('forums-dropdown', 'getForumsDropdown');
-    Route::get('users-dropdown', 'getUsersDropdown');
-    Route::get('transactions', 'responseTransactions');
+    Route::middleware(['auth', 'hasToken:RESPONSE_AUDIT_TRAIL_VIEW_RESPONSE_AUDIT_TRAIL'])->group(function () {
+        Route::get('', 'getResponseAuditTrails');
+        Route::get('get/{id}', 'getResponseAuditTrail');
+        Route::get('forums-dropdown', 'getForumsDropdown');
+        Route::get('users-dropdown', 'getUsersDropdown');
+        Route::get('transactions', 'responseTransactions');
+    });
     Route::middleware(['auth'])->post('create', 'createResponseAuditTrail');
     Route::middleware(['auth'])->put('update/{id}', 'updateResponseAuditTrail');
     Route::middleware(['auth'])->delete('delete/{id}', 'deleteResponseAuditTrail');
