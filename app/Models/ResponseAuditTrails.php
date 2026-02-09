@@ -18,6 +18,7 @@ class ResponseAuditTrails extends Model
     
     protected $table = 'response_audit_trails';
     protected $primaryKey = 'id';
+    protected $keyType = 'string';
     public $incrementing = false;
     
     const CREATED_AT = 'createdDate';
