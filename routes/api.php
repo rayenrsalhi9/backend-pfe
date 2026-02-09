@@ -35,6 +35,7 @@ use App\Http\Controllers\DocumentAuditTrailController;
 use App\Http\Controllers\DocumentPermissionController;
 use App\Http\Controllers\Forums\ForumCategoriesController;
 use App\Http\Controllers\Forums\ForumsController;
+use App\Http\Controllers\ResponseAuditTrailController;
 use App\Http\Controllers\SurverysController;
 
 // use App\Http\Controllers\PublicArticlesController;
@@ -424,6 +425,19 @@ Route::prefix('forums')->group(function () {
         Route::middleware(['auth'])->post('create', 'create');
         Route::middleware(['auth'])->delete('delete/{id}', 'delete');
     });
+});
+
+Route::prefix('response-audit')->controller(ResponseAuditTrailController::class)->group(function () {
+    Route::middleware(['auth', 'hasToken:RESPONSE_AUDIT_TRAIL_VIEW_RESPONSE_AUDIT_TRAIL'])->group(function () {
+        Route::get('', 'getResponseAuditTrails');
+        Route::get('get/{id}', 'getResponseAuditTrail');
+        Route::get('forums-dropdown', 'getForumsDropdown');
+        Route::get('users-dropdown', 'getUsersDropdown');
+        Route::get('transactions', 'responseTransactions');
+    });
+    Route::middleware(['auth'])->post('create', 'createResponseAuditTrail');
+    Route::middleware(['auth'])->put('update/{id}', 'updateResponseAuditTrail');
+    Route::middleware(['auth'])->delete('delete/{id}', 'deleteResponseAuditTrail');
 });
 
 Route::prefix('surveys')->controller(SurverysController::class)->group(function () {

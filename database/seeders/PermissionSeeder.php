@@ -103,6 +103,14 @@ class PermissionSeeder extends Seeder
                     'modifiedBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
                     'isDeleted' => 0
                 ],
+                [
+                    'id' => 'a8f5c3e2-7b4d-4e91-9f2c-1d8e9f7a5b2c',
+                    'name' => 'Response Audit Trail',
+                    'order' => 11,
+                    'createdBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                    'modifiedBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                    'isDeleted' => 0
+                ],
             ];
 
 
@@ -213,6 +221,42 @@ class PermissionSeeder extends Seeder
                     'order' => 1,
                     'pageId' => '324bdc51-d71f-4f80-9f28-a30e8aae4009',
                     'code' => 'USER_VIEW_USERS',
+                    'createdBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                    'modifiedBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                    'isDeleted' => 0
+                ], [
+                    'id' => 'b2c4d5e6-7f8a-9b0c-1d2e-3f4a5b6c7d8e',
+                    'name' => 'View Response Audit Trail',
+                    'order' => 1,
+                    'pageId' => 'a8f5c3e2-7b4d-4e91-9f2c-1d8e9f7a5b2c',
+                    'code' => 'RESPONSE_AUDIT_TRAIL_VIEW_RESPONSE_AUDIT_TRAIL',
+                    'createdBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                    'modifiedBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                    'isDeleted' => 0
+                ], [
+                    'id' => 'c3d4e5f6-8a9b-0c1d-2e3f-4a5b6c7d8e9f',
+                    'name' => 'Create Response Audit Trail',
+                    'order' => 2,
+                    'pageId' => 'a8f5c3e2-7b4d-4e91-9f2c-1d8e9f7a5b2c',
+                    'code' => 'RESPONSE_AUDIT_TRAIL_CREATE_RESPONSE_AUDIT_TRAIL',
+                    'createdBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                    'modifiedBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                    'isDeleted' => 0
+                ], [
+                    'id' => 'd4e5f6a7-9b0c-1d2e-3f4a-5b6c7d8e9f0a',
+                    'name' => 'Update Response Audit Trail',
+                    'order' => 3,
+                    'pageId' => 'a8f5c3e2-7b4d-4e91-9f2c-1d8e9f7a5b2c',
+                    'code' => 'RESPONSE_AUDIT_TRAIL_UPDATE_RESPONSE_AUDIT_TRAIL',
+                    'createdBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                    'modifiedBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                    'isDeleted' => 0
+                ], [
+                    'id' => 'e5f6a7b8-0c1d-2e3f-4a5b-6c7d8e9f0a1b',
+                    'name' => 'Delete Response Audit Trail',
+                    'order' => 4,
+                    'pageId' => 'a8f5c3e2-7b4d-4e91-9f2c-1d8e9f7a5b2c',
+                    'code' => 'RESPONSE_AUDIT_TRAIL_DELETE_RESPONSE_AUDIT_TRAIL',
                     'createdBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
                     'modifiedBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
                     'isDeleted' => 0
@@ -388,6 +432,26 @@ class PermissionSeeder extends Seeder
                 'actionId' => '1c7d3e31-08ad-43cf-9cf7-4ffafdda9029',
                 'roleId' => 'f8b6ace9-a625-4397-bdf8-f34060dbd8e4',
                 'claimType' => 'DOCUMENT_AUDIT_TRAIL_VIEW_DOCUMENT_AUDIT_TRAIL'
+            ], [
+                'id' => Str::uuid(36),
+                'actionId' => 'b2c4d5e6-7f8a-9b0c-1d2e-3f4a5b6c7d8e',
+                'roleId' => 'f8b6ace9-a625-4397-bdf8-f34060dbd8e4',
+                'claimType' => 'RESPONSE_AUDIT_TRAIL_VIEW_RESPONSE_AUDIT_TRAIL'
+            ], [
+                'id' => Str::uuid(36),
+                'actionId' => 'c3d4e5f6-8a9b-0c1d-2e3f-4a5b6c7d8e9f',
+                'roleId' => 'f8b6ace9-a625-4397-bdf8-f34060dbd8e4',
+                'claimType' => 'RESPONSE_AUDIT_TRAIL_CREATE_RESPONSE_AUDIT_TRAIL'
+            ], [
+                'id' => Str::uuid(36),
+                'actionId' => 'd4e5f6a7-9b0c-1d2e-3f4a-5b6c7d8e9f0a',
+                'roleId' => 'f8b6ace9-a625-4397-bdf8-f34060dbd8e4',
+                'claimType' => 'RESPONSE_AUDIT_TRAIL_UPDATE_RESPONSE_AUDIT_TRAIL'
+            ], [
+                'id' => Str::uuid(36),
+                'actionId' => 'e5f6a7b8-0c1d-2e3f-4a5b-6c7d8e9f0a1b',
+                'roleId' => 'f8b6ace9-a625-4397-bdf8-f34060dbd8e4',
+                'claimType' => 'RESPONSE_AUDIT_TRAIL_DELETE_RESPONSE_AUDIT_TRAIL'
             ],    [
                 'id' => Str::uuid(36),
                 'actionId' => '229ad778-c7d3-4f5f-ab52-24b537c39514',

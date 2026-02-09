@@ -7,9 +7,11 @@ use App\Models\ForumComments;
 use App\Models\ForumReactions;
 use App\Models\Forums;
 use App\Models\Tags;
+use App\Models\ResponseAuditTrails;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class ForumsController extends Controller
 {
@@ -152,6 +154,21 @@ class ForumsController extends Controller
         $comment->comment = $request->comment;
         $comment->save();
 
+        // Create audit trail entry (non-blocking after comment creation successful)
+        try {
+            $audit = new ResponseAuditTrails();
+            $audit->forumId = $forum->id;
+            $audit->responseId = $comment->id;
+            $audit->responseType = 'comment';
+            $audit->operationName = 'Created';
+            $audit->responseContent = $request->comment;
+            $audit->ipAddress = $request->ip();
+            $audit->userAgent = $request->userAgent();
+            $audit->save();
+        } catch (\Throwable $th) {
+            Log::error($th->getMessage());
+        }
+
         $response = $forum->load('category', 'creator',  'reactions', 'reactionsUp', 'reactionsDown', 'reactionsHeart', 'reactions.user', 'comments', 'comments.user');
 
         return response()->json($response, 200);
@@ -171,12 +188,39 @@ class ForumsController extends Controller
         if ($forumReaction) {
 
             if ($forumReaction->type == $request->type) {
+                // Delete reaction
                 $forumReaction->delete();
+                
+                // Create audit trail entry
+                $audit = new ResponseAuditTrails();
+                $audit->forumId = $forum->id;
+                $audit->responseId = $forumReaction->id;
+                $audit->responseType = 'reaction';
+                $audit->operationName = 'Deleted';
+                $audit->responseContent = $request->type;
+                $audit->ipAddress = $request->ip();
+                $audit->userAgent = $request->userAgent();
+                $audit->save();
             } else {
+                // Store previous type for audit
+                $previousType = $forumReaction->type;
+                
                 $forumReaction->forum_id = $forum->id;
                 $forumReaction->type = $request->type;
                 $forumReaction->user_id = $user->id;
                 $forumReaction->save();
+                
+                // Create audit trail entry
+                $audit = new ResponseAuditTrails();
+                $audit->forumId = $forum->id;
+                $audit->responseId = $forumReaction->id;
+                $audit->responseType = 'reaction';
+                $audit->operationName = 'Updated';
+                $audit->responseContent = $request->type;
+                $audit->previousContent = $previousType;
+                $audit->ipAddress = $request->ip();
+                $audit->userAgent = $request->userAgent();
+                $audit->save();
             }
         } else {
             $reaction = new ForumReactions();
@@ -184,6 +228,17 @@ class ForumsController extends Controller
             $reaction->user_id = $user->id;
             $reaction->type = $request->type;
             $reaction->save();
+            
+            // Create audit trail entry
+            $audit = new ResponseAuditTrails();
+            $audit->forumId = $forum->id;
+            $audit->responseId = $reaction->id;
+            $audit->responseType = 'reaction';
+            $audit->operationName = 'Created';
+            $audit->responseContent = $request->type;
+            $audit->ipAddress = $request->ip();
+            $audit->userAgent = $request->userAgent();
+            $audit->save();
         }
 
         $response = $forum->load('category', 'creator',  'reactions', 'reactionsUp', 'reactionsDown', 'reactionsHeart', 'reactions.user', 'comments', 'comments.user');
