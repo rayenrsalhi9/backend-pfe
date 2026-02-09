@@ -13,15 +13,14 @@ use Carbon\Carbon;
 class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterface
 {
     /**
-     * Get paginated response audit trails
+     * Apply filters to the query based on query string parameters
      *
+     * @param \Illuminate\Database\Eloquent\Builder $query
      * @param object $queryString
-     * @return array
+     * @return \Illuminate\Database\Eloquent\Builder
      */
-    public function getResponseAuditTrails($queryString)
+    private function applyFilters($query, $queryString)
     {
-        $query = ResponseAuditTrails::with(['forum', 'user']);
-
         // Apply filters
         if (!empty($queryString->forumId)) {
             $query->where('forumId', $queryString->forumId);
@@ -66,6 +65,21 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
                     ->orWhere('ipAddress', 'like', $searchTerm);
             });
         }
+
+        return $query;
+    }
+    /**
+     * Get paginated response audit trails
+     *
+     * @param object $queryString
+     * @return array
+     */
+    public function getResponseAuditTrails($queryString)
+    {
+        $query = ResponseAuditTrails::with(['forum', 'user']);
+
+        // Apply filters using the helper method
+        $query = $this->applyFilters($query, $queryString);
 
         // Apply ordering
         $orderBy = $queryString->orderBy ?? 'createdDate desc';
@@ -113,49 +127,8 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
     {
         $query = ResponseAuditTrails::query();
 
-        // Apply the same filters as getResponseAuditTrails
-        if (!empty($queryString->forumId)) {
-            $query->where('forumId', $queryString->forumId);
-        }
-
-        if (!empty($queryString->responseId)) {
-            $query->where('responseId', $queryString->responseId);
-        }
-
-        if (!empty($queryString->operation)) {
-            $query->where('operationName', $queryString->operation);
-        }
-
-        if (!empty($queryString->userId)) {
-            $query->where('createdBy', $queryString->userId);
-        }
-
-        if (!empty($queryString->responseType) && $queryString->responseType !== 'all') {
-            $query->where('responseType', $queryString->responseType);
-        }
-
-        if (!empty($queryString->dateFrom)) {
-            $query->where('createdDate', '>=', $queryString->dateFrom);
-        }
-
-        if (!empty($queryString->dateTo)) {
-            $query->where('createdDate', '<=', $queryString->dateTo);
-        }
-
-        if (!empty($queryString->searchQuery)) {
-            $searchTerm = '%' . $queryString->searchQuery . '%';
-            $query->where(function ($q) use ($searchTerm) {
-                $q->where('responseContent', 'like', $searchTerm)
-                    ->orWhere('previousContent', 'like', $searchTerm)
-                    ->orWhereHas('forum', function ($forumQ) use ($searchTerm) {
-                        $forumQ->where('title', 'like', $searchTerm);
-                    })
-                    ->orWhereHas('user', function ($userQ) use ($searchTerm) {
-                        $userQ->where('name', 'like', $searchTerm);
-                    })
-                    ->orWhere('ipAddress', 'like', $searchTerm);
-            });
-        }
+        // Apply filters using the helper method
+        $query = $this->applyFilters($query, $queryString);
 
         return $query->count();
     }
