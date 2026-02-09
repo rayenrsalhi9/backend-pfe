@@ -81,12 +81,14 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
         // Apply filters using the helper method
         $query = $this->applyFilters($query, $queryString);
 
-        // Apply ordering
+        // Apply ordering with whitelist validation
+        $allowedOrderColumns = ['createdDate', 'modifiedDate', 'operationName', 'responseType'];
+        $allowedDirections = ['asc', 'desc'];
         $orderBy = $queryString->orderBy ?? 'createdDate desc';
         $orderParts = explode(' ', $orderBy);
-        $column = $orderParts[0];
-        $direction = $orderParts[1] ?? 'asc';
-        
+        $column = in_array($orderParts[0], $allowedOrderColumns) ? $orderParts[0] : 'createdDate';
+        $direction = in_array(strtolower($orderParts[1] ?? 'asc'), $allowedDirections) ? strtolower($orderParts[1] ?? 'asc') : 'desc';
+
         $query->orderBy($column, $direction);
 
         // Apply pagination
@@ -154,12 +156,12 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
     public function updateResponseAuditTrail($id, $data)
     {
         $auditTrail = ResponseAuditTrails::find($id);
-        
+
         if ($auditTrail) {
             $auditTrail->update($data);
             return $auditTrail;
         }
-        
+
         return null;
     }
 
@@ -172,13 +174,13 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
     public function deleteResponseAuditTrail($id)
     {
         $auditTrail = ResponseAuditTrails::find($id);
-        
+
         if ($auditTrail) {
             $auditTrail->isDeleted = true;
             $auditTrail->save();
             return true;
         }
-        
+
         return false;
     }
 
@@ -193,21 +195,21 @@ class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterf
     {
         $year = $year ?? Carbon::now()->year;
         $month = $month ?? Carbon::now()->month;
-        
+
         $query = ResponseAuditTrails::whereYear('createdDate', $year)
             ->whereMonth('createdDate', $month);
-        
+
         $operations = $query->selectRaw('operationName, COUNT(*) as count')
             ->groupBy('operationName')
             ->pluck('count', 'operationName');
-        
+
         $dailyData = ResponseAuditTrails::whereYear('createdDate', $year)
             ->whereMonth('createdDate', $month)
             ->selectRaw('DATE(createdDate) as date, operationName, COUNT(*) as count')
             ->groupBy('date', 'operationName')
             ->orderBy('date')
             ->get();
-        
+
         return [
             'operations' => $operations,
             'daily' => $dailyData,
