@@ -32,8 +32,15 @@ class ResponseAuditTrailController extends Controller
             // Set default values
             $queryString->pageSize = $queryString->pageSize ?? 50;
             $queryString->skip = $queryString->skip ?? 0;
-            $queryString->orderBy = $queryString->orderBy ?? 'createdDate desc';
             $queryString->searchQuery = $queryString->searchQuery ?? '';
+
+            // Validate and set orderBy
+            $allowedOrderColumns = ['createdDate', 'modifiedDate', 'operationName', 'responseType'];
+            $allowedDirections = ['asc', 'desc'];
+            $orderParts = explode(' ', $queryString->orderBy ?? 'createdDate desc');
+            $column = in_array($orderParts[0], $allowedOrderColumns) ? $orderParts[0] : 'createdDate';
+            $direction = in_array(strtolower($orderParts[1] ?? 'desc'), $allowedDirections) ? $orderParts[1] : 'desc';
+            $queryString->orderBy = "$column $direction";
             
             $result = $this->responseAuditTrailRepository->getResponseAuditTrails($queryString);
             
