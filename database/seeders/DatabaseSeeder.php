@@ -21,7 +21,8 @@ class DatabaseSeeder extends Seeder
             LanguageSeeder::class,
             PermissionSeederV2::class,
             PermissionSeederV21::class,
-            PermissionSeederV23::class
+            PermissionSeederV23::class,
+            ResponseAuditTrailPermissionSeeder::class
         ]);
     }
 }

@@ -428,7 +428,7 @@ Route::prefix('forums')->group(function () {
 });
 
 Route::prefix('response-audit')->controller(ResponseAuditTrailController::class)->group(function () {
-    Route::middleware(['auth', 'hasToken:RESPONSE_AUDIT_TRAIL_VIEW_RESPONSE_AUDIT_TRAIL'])->group(function () {
+    Route::middleware(['auth', 'hasToken:RESPONSE_AUDIT_VIEW_RESPONSE_AUDIT_LOGS'])->group(function () {
         Route::get('', 'getResponseAuditTrails');
         Route::get('get/{id}', 'getResponseAuditTrail');
         Route::get('forums-dropdown', 'getForumsDropdown');
