@@ -26,8 +26,8 @@ return new class extends Migration
             $table->uuid('createdBy')->nullable(false);
             $table->uuid('modifiedBy')->nullable();
             $table->boolean('isDeleted')->default(false);
-            $table->dateTime('createdDate');
-            $table->dateTime('modifiedDate');
+            $table->dateTime('createdDate')->useCurrent();
+            $table->dateTime('modifiedDate')->useCurrent();
 
             
             // Foreign key constraints
