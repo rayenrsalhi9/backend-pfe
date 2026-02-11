@@ -364,41 +364,54 @@ class AuthController extends Controller
             ], 422);
         }
 
-        // Create new user
-        $user = new Users();
-        $user->firstName = $request->firstName ?: '';
-        $user->lastName = $request->lastName ?: '';
-        $user->email = $request->email;
-        $user->userName = $request->username;
-        $user->password = Hash::make($request->password);
-        $user->save();
+        try {
+            DB::beginTransaction();
 
-        // Get user claims (empty for new users)
-        $userClaims = [];
+            // Create new user
+            $user = new Users();
+            $user->firstName = $request->firstName ?: '';
+            $user->lastName = $request->lastName ?: '';
+            $user->email = $request->email;
+            $user->userName = $request->username;
+            $user->password = Hash::make($request->password);
+            $user->save();
 
-        // Generate token with claims
-        $token = Auth::claims([
-            'claims' => $userClaims, 
-            'email' => $user->email, 
-            'userId' => $user->id
-        ])->login($user);
+            // Get user claims (empty for new users)
+            $userClaims = [];
 
-        return response()->json([
-            'status' => 'success',
-            'claims' => $userClaims,
-            'user' => [
-                'id' => $user->id,
-                'firstName' => $user->firstName,
-                'lastName' => $user->lastName,
-                'email' => $user->email,
-                'userName' => $user->userName,
-                'phoneNumber' => $user->phoneNumber
-            ],
-            'authorisation' => [
-                'token' => $token,
-                'type' => 'bearer',
-            ]
-        ]);
+            // Generate token with claims
+            $token = Auth::claims([
+                'claims' => $userClaims, 
+                'email' => $user->email, 
+                'userId' => $user->id
+            ])->login($user);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'claims' => $userClaims,
+                'user' => [
+                    'id' => $user->id,
+                    'firstName' => $user->firstName,
+                    'lastName' => $user->lastName,
+                    'email' => $user->email,
+                    'userName' => $user->userName,
+                    'phoneNumber' => $user->phoneNumber
+                ],
+                'authorisation' => [
+                    'token' => $token,
+                    'type' => 'bearer',
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Registration failed: ' . $e->getMessage(),
+            ], 422);
+        }
     }
 
 }
