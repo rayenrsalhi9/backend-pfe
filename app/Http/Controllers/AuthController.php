@@ -347,5 +347,58 @@ class AuthController extends Controller
         );
     }
 
+    public function register(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            'password' => ['required', 'string', 'min:6'],
+            'username' => ['required', 'string', 'max:255', 'unique:users,userName'],
+            'firstName' => ['nullable', 'string', 'max:255'],
+            'lastName' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $validator->errors(),
+            ], 422);
+        }
+
+        // Create new user
+        $user = new Users();
+        $user->firstName = $request->firstName ?: '';
+        $user->lastName = $request->lastName ?: '';
+        $user->email = $request->email;
+        $user->userName = $request->username;
+        $user->password = Hash::make($request->password);
+        $user->save();
+
+        // Get user claims (empty for new users)
+        $userClaims = [];
+
+        // Generate token with claims
+        $token = Auth::claims([
+            'claims' => $userClaims, 
+            'email' => $user->email, 
+            'userId' => $user->id
+        ])->login($user);
+
+        return response()->json([
+            'status' => 'success',
+            'claims' => $userClaims,
+            'user' => [
+                'id' => $user->id,
+                'firstName' => $user->firstName,
+                'lastName' => $user->lastName,
+                'email' => $user->email,
+                'userName' => $user->userName,
+                'phoneNumber' => $user->phoneNumber
+            ],
+            'authorisation' => [
+                'token' => $token,
+                'type' => 'bearer',
+            ]
+        ]);
+    }
 
 }

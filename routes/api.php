@@ -54,6 +54,7 @@ use App\Http\Controllers\SurverysController;
 Route::controller(AuthController::class)->group(function () {
     Route::post('auth/login', 'login');
     Route::post('auth/logout', 'logout');
+    Route::post('auth/register', 'register');
     Route::post('auth/subscribe', 'subscribe');
     Route::post('auth/forgot', 'forgot');
     Route::post('auth/verify', 'verifyPin');
