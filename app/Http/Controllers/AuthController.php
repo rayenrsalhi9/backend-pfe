@@ -12,6 +12,7 @@ use Illuminate\Foundation\Auth\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -407,9 +408,10 @@ class AuthController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Registration failed: ' . $e->getMessage());
             return response()->json([
                 'status' => 'error',
-                'message' => 'Registration failed: ' . $e->getMessage(),
+                'message' => 'Registration failed. Please try again later.',
             ], 422);
         }
     }
