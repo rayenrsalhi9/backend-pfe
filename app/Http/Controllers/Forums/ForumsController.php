@@ -285,9 +285,6 @@ class ForumsController extends Controller
             // Delete the comment
             $comment->delete();
             
-            // Delete the comment
-            $comment->delete();
-            
             // Create audit trail entry (non-blocking after deletion successful)
             try {
                 $audit = new ResponseAuditTrails();
