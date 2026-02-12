@@ -267,7 +267,8 @@ class ForumsController extends Controller
             }
             
             // Admin can delete any comment
-            if ($user->hasClaim('FORUM_DELETE_COMMENT')) {
+            $userClaims = Auth::parseToken()->getPayload()->get('claims');
+            if (in_array('FORUM_DELETE_COMMENT', $userClaims)) {
                 $canDelete = true;
             }
             
