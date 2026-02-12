@@ -395,7 +395,6 @@ Route::prefix('blogs')->group(function () {
 
         Route::middleware(['auth'])->post('comments/{id}', 'addComment');
         Route::middleware(['auth'])->post('reactions/{id}', 'addReaction');
-        Route::middleware(['auth'])->delete('comments/delete/{commentId}', 'deleteComment');
     });
 
     Route::prefix('categories')->controller(BlogCategoriesController::class)->group(function () {
@@ -418,6 +417,7 @@ Route::prefix('forums')->group(function () {
 
         Route::middleware(['auth'])->post('comments/{id}', 'addComment');
         Route::middleware(['auth'])->post('reactions/{id}', 'addReaction');
+        Route::middleware(['auth'])->delete('comments/delete/{commentId}', 'deleteComment');
     });
 
     Route::prefix('categories')->controller(ForumCategoriesController::class)->group(function () {
