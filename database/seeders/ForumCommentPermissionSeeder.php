@@ -9,6 +9,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class ForumCommentPermissionSeeder extends Seeder
 {
@@ -24,12 +25,12 @@ class ForumCommentPermissionSeeder extends Seeder
         $now = Carbon::now();
 
         // Find existing Forums page using raw query to avoid model boot
-        $forumPage = \DB::table('pages')->where('name', 'Forums')->first();
+        $forumPage = DB::table('pages')->where('name', 'Forums')->first();
         
         if (!$forumPage) {
             // Create Forums page using raw SQL
             $forumPageId = Str::uuid();
-            \DB::table('pages')->insert([
+            DB::table('pages')->insert([
                 'id' => $forumPageId,
                 'name' => 'Forums',
                 'order' => 13,
@@ -44,14 +45,14 @@ class ForumCommentPermissionSeeder extends Seeder
         
 
         // Check if delete comment action already exists
-        $existingAction = \DB::table('actions')->where('code', 'FORUM_DELETE_COMMENT')->first();
+        $existingAction = DB::table('actions')->where('code', 'FORUM_DELETE_COMMENT')->first();
         
         if (!$existingAction) {
             // Wrap both inserts in a transaction to ensure atomicity
-            \DB::transaction(function () use ($forumPage, $defaultUserId, $now) {
+            DB::transaction(function () use ($forumPage, $defaultUserId, $now) {
                 // Create delete comment action using raw SQL
                 $deleteActionId = Str::uuid();
-                \DB::table('actions')->insert([
+                DB::table('actions')->insert([
                     'id' => $deleteActionId,
                     'name' => 'Delete Forum Comments',
                     'order' => 4,
@@ -65,7 +66,7 @@ class ForumCommentPermissionSeeder extends Seeder
                 ]);
 
                 // Assign to Admin role using raw SQL
-                \DB::table('roleClaims')->insert([
+                DB::table('roleClaims')->insert([
                     'id' => Str::uuid(),
                     'actionId' => $deleteActionId,
                     'roleId' => 'f8b6ace9-a625-4397-bdf8-f34060dbd8e4', // Admin role ID
