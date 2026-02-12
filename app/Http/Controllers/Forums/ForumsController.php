@@ -245,4 +245,80 @@ class ForumsController extends Controller
 
         return response()->json($response, 200);
     }
+
+    function deleteComment($commentId, Request $request)
+    {
+        try {
+            // Validate comment ID
+            $request->merge(['commentId' => $commentId]);
+            $request->validate([
+                'commentId' => 'required|uuid|exists:forum_comments,id'
+            ]);
+
+            $user = Auth::user();
+            $comment = ForumComments::findOrFail($commentId);
+            
+            // Check permissions
+            $canDelete = false;
+            
+            // User can delete their own comments
+            if ($comment->user_id === $user->id) {
+                $canDelete = true;
+            }
+            
+            // Admin can delete any comment
+            $userClaims = Auth::parseToken()->getPayload()->get('claims') ?? [];
+            if (in_array('FORUM_DELETE_COMMENT', $userClaims, true)) {
+                $canDelete = true;
+            }            
+            if (!$canDelete) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You don\'t have permission to delete this comment'
+                ], 403);
+            }
+
+            // Get forum ID before deletion for audit trail
+            $forumId = $comment->forum_id;
+            $commentContent = $comment->comment;
+            
+            // Delete the comment
+            $comment->delete();
+            
+            // Create audit trail entry (non-blocking after deletion successful)
+            try {
+                $audit = new ResponseAuditTrails();
+                $audit->forumId = $forumId;
+                $audit->responseId = $commentId;
+                $audit->responseType = 'comment';
+                $audit->operationName = 'Deleted';
+                $audit->responseContent = $commentContent;
+                $audit->ipAddress = $request->ip();
+                $audit->userAgent = $request->userAgent();
+                $audit->createdBy = $user->id;
+                $audit->save();
+            } catch (\Throwable $th) {
+                Log::error('Audit trail creation failed: ' . $th->getMessage());
+            }
+                     
+            return response()->json([
+                'success' => true,
+                'message' => 'Comment deleted successfully'
+            ], 200);
+            
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e; // Let Laravel handle validation errors (422 response)
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Comment not found'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Comment deletion failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete comment'
+            ], 500);
+        }
+    }
 }
