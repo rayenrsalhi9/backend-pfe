@@ -1,16 +1,16 @@
 <?php
 
-namespace App\Repositories;
+namespace App\Repositories\Implementation;
 
 use App\Models\ResponseAuditTrails;
 use App\Models\Forums;
 use App\Models\Users;
-use App\Repositories\Interfaces\ResponseAuditTrailRepositoryInterface;
+use App\Repositories\Contracts\ResponsesAuditRepositoryInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
-class ResponseAuditTrailRepository implements ResponseAuditTrailRepositoryInterface
+class ResponsesAuditRepository implements ResponsesAuditRepositoryInterface
 {
     /**
      * Apply filters to the query based on query string parameters

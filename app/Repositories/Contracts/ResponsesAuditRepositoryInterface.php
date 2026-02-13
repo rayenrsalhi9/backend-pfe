@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Repositories\Interfaces;
+namespace App\Repositories\Contracts;
 
-interface ResponseAuditTrailRepositoryInterface
+interface ResponsesAuditRepositoryInterface
 {
     /**
      * Get paginated response audit trails

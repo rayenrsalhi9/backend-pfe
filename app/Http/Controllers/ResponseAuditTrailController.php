@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Repositories\Interfaces\ResponseAuditTrailRepositoryInterface;
+use App\Repositories\Contracts\ResponsesAuditRepositoryInterface;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +13,7 @@ class ResponseAuditTrailController extends Controller
 {
     protected $responseAuditTrailRepository;
 
-    public function __construct(ResponseAuditTrailRepositoryInterface $responseAuditTrailRepository)
+    public function __construct(ResponsesAuditRepositoryInterface $responseAuditTrailRepository)
     {
         $this->responseAuditTrailRepository = $responseAuditTrailRepository;
     }
