@@ -101,10 +101,34 @@ class AuthController extends Controller
     }
 
     public function logout(Request $request) {
-
-        $userActive = Users::find($request->user);
-        $userActive->isConnected = false;
-        $userActive->save();
+        try {
+            // Get the current token
+            $token = Auth::getToken();
+            
+            if ($token) {
+                // Add token to blacklist
+                DB::table('jwt_blacklist')->insert([
+                    'token_hash' => hash('sha256', $token->get()),
+                    'expires_at' => now()->addMinutes(config('jwt.ttl', 60)),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+            
+            // Update user connection status
+            $user = Auth::user();
+            if ($user) {
+                $userActive = Users::find($user->id);
+                if ($userActive) {
+                    $userActive->isConnected = false;
+                    $userActive->save();
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('Logout failed: ' . $e->getMessage());
+            return response()->json(['error' => 'Logout failed'], 500);
+        }
+        return response()->json(['status' => 'success', 'message' => 'Successfully logged out']);
     }
 
     public function refresh()
