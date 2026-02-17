@@ -3,6 +3,7 @@
 namespace App\Console;
 
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 
 class Kernel extends ConsoleKernel
@@ -29,6 +30,11 @@ class Kernel extends ConsoleKernel
         $schedule->command('notification:customDateReminderSchedule')->daily();
         $schedule->command('notification:reminderSchedule')->everyTenMinutes();
         $schedule->command('notification:sendEmailSuppliers')->everyTenMinutes();
+        
+        // Clean up expired blacklisted tokens
+        $schedule->call(function () {
+            DB::table('jwt_blacklist')->where('expires_at', '<', now())->delete();
+        })->daily();
     }
 
     /**

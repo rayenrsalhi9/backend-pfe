@@ -65,7 +65,7 @@ Route::get('document/{id}/officeviewer', [DocumentController::class, 'officeview
 Route::get('/companyProfile', [CompanyProfileController::class, 'getCompanyProfile']);
 Route::post('/companyProfile', [CompanyProfileController::class, 'updateCompanyProfile']);
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::post('auth/refresh', [AuthController::class, 'refresh']);
     /* Route::get('/user/{id}', [UserController::class, 'edit']); */
