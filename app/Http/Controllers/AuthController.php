@@ -128,6 +128,7 @@ class AuthController extends Controller
             Log::error('Logout failed: ' . $e->getMessage());
             return response()->json(['error' => 'Logout failed'], 500);
         }
+        return response()->json(['status' => 'success', 'message' => 'Successfully logged out']);
     }
 
     public function refresh()
