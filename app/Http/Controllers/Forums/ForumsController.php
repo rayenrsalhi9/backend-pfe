@@ -12,18 +12,76 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class ForumsController extends Controller
 {
+    /**
+     * True if authenticated user has role: roles.name = "Super Admin"
+     * Pivot table in your DB is: userroles (NOT user_roles)
+     * We still auto-detect columns to be safe.
+     */
+    private function currentUserIsSuperAdmin(): bool
+    {
+        $user = Auth::user();
+        if (!$user) return false;
+
+        // detect pivot table
+        $pivotTable = null;
+        foreach (['userroles', 'user_roles', 'role_user', 'users_roles'] as $candidate) {
+            if (Schema::hasTable($candidate)) {
+                $pivotTable = $candidate;
+                break;
+            }
+        }
+        if (!$pivotTable || !Schema::hasTable('roles')) return false;
+
+        // detect columns
+        $userCol = null;
+        foreach (['userId', 'user_id', 'userid', 'userID'] as $c) {
+            if (Schema::hasColumn($pivotTable, $c)) { $userCol = $c; break; }
+        }
+
+        $roleCol = null;
+        foreach (['roleId', 'role_id', 'roleid', 'roleID'] as $c) {
+            if (Schema::hasColumn($pivotTable, $c)) { $roleCol = $c; break; }
+        }
+
+        if (!$userCol || !$roleCol) return false;
+
+        $q = DB::table($pivotTable)
+            ->join('roles', 'roles.id', '=', $pivotTable . '.' . $roleCol)
+            ->where($pivotTable . '.' . $userCol, '=', $user->id)
+            ->whereRaw('LOWER(roles.name) = ?', [strtolower('Super Admin')]);
+
+        // consider active role rows if these columns exist
+        if (Schema::hasColumn('roles', 'isDeleted')) {
+            $q->where('roles.isDeleted', 0);
+        }
+        if (Schema::hasColumn('roles', 'deleted_at')) {
+            $q->whereNull('roles.deleted_at');
+        }
+
+        // consider active pivot rows if these columns exist
+        if (Schema::hasColumn($pivotTable, 'isDeleted')) {
+            $q->where($pivotTable . '.isDeleted', 0);
+        }
+        if (Schema::hasColumn($pivotTable, 'deleted_at')) {
+            $q->whereNull($pivotTable . '.deleted_at');
+        }
+
+        return $q->exists();
+    }
 
     function getAll(Request $request)
     {
-        $user = Auth::user();
         $limit = $request->limit;
         $banner = $request->banner;
 
         $query = Forums::orderBy('created_at', 'DESC')
-            ->with('category', 'creator','reactions','comments', 'tags')
+            ->with('category', 'creator', 'reactions', 'comments', 'tags')
+            ->withCount(['reactions', 'comments'])
             ->when($limit, function ($query) use ($limit) {
                 return $query->take($limit);
             })
@@ -46,28 +104,54 @@ class ForumsController extends Controller
         if ($request->createdAt) {
             $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
             $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-
             $query->whereBetween('created_at', [$startDate, $endDate]);
         }
 
-        $blog = $query->get();
-        return response()->json($blog, 200);
+        $forums = $query->get();
+
+        // expose capability so UI can show delete button only for super admin
+        $canDelete = $this->currentUserIsSuperAdmin();
+        foreach ($forums as $f) {
+            $f->setAttribute('canDeleteComments', $canDelete);
+            $f->setAttribute('can_delete_comments', $canDelete);
+        }
+
+        return response()->json($forums, 200);
     }
 
     function getOne($id)
     {
-        $blog = Forums::where('id', $id)->with('category', 'creator',  'reactions', 'reactionsUp', 'reactionsDown', 'reactionsHeart', 'reactions.user', 'comments', 'comments.user', 'tags')->first();
-        return response()->json($blog, 200);
+        $forum = Forums::where('id', $id)
+            ->with(
+                'category',
+                'creator',
+                'reactions',
+                'reactionsUp',
+                'reactionsDown',
+                'reactionsHeart',
+                'reactions.user',
+                'comments',
+                'comments.user',
+                'tags'
+            )
+            ->withCount(['reactions', 'comments'])
+            ->first();
+
+        if ($forum) {
+            $canDelete = $this->currentUserIsSuperAdmin();
+            $forum->setAttribute('canDeleteComments', $canDelete);
+            $forum->setAttribute('can_delete_comments', $canDelete);
+        }
+
+        return response()->json($forum, 200);
     }
 
     function create(Request $request)
     {
-
         $user = Auth::user();
         $tags = $request->tags;
 
         try {
-
             $forum = new Forums();
             $forum->title = $request->title;
             $forum->content = $request->content;
@@ -77,9 +161,8 @@ class ForumsController extends Controller
             $forum->closed = false;
             $forum->save();
 
-            if($tags && count($tags) > 0) {
-
-                foreach ($tags as $key => $tag) {
+            if ($tags && count($tags) > 0) {
+                foreach ($tags as $tag) {
                     $forumTag = new Tags();
                     $forumTag->forum_id = $forum->id;
                     $forumTag->metatag = $tag['label'];
@@ -89,7 +172,6 @@ class ForumsController extends Controller
             }
 
             $response = $forum->load('category', 'creator', 'tags');
-
             return response()->json($response, 200);
         } catch (\Throwable $th) {
             return response($th->getMessage(), 500);
@@ -98,12 +180,10 @@ class ForumsController extends Controller
 
     function update($id, Request $request)
     {
-
         $user = Auth::user();
         $tags = $request->tags;
 
         try {
-
             $forum = Forums::where('id', $id)->first();
             $forum->title = $request->title;
             $forum->content = $request->content;
@@ -113,11 +193,10 @@ class ForumsController extends Controller
             $forum->closed = $request->closed;
             $forum->save();
 
-            if($tags && count($tags) > 0) {
+            if ($tags && count($tags) > 0) {
+                Tags::where('forum_id', $forum->id)->delete();
 
-                Tags::where('forum_id',$forum->id)->delete();
-
-                foreach ($tags as $key => $tag) {
+                foreach ($tags as $tag) {
                     $forumTag = new Tags();
                     $forumTag->forum_id = $forum->id;
                     $forumTag->metatag = $tag['label'];
@@ -127,7 +206,6 @@ class ForumsController extends Controller
             }
 
             $response = $forum->load('category', 'creator', 'tags');
-
             return response()->json($response, 200);
         } catch (\Throwable $th) {
             return response($th->getMessage(), 500);
@@ -136,15 +214,13 @@ class ForumsController extends Controller
 
     function delete($id)
     {
-        $category = Forums::where('id', $id)->first();
-        $category->delete();
-
+        $forum = Forums::where('id', $id)->first();
+        $forum->delete();
         return response()->json('successfully deleted', 200);
     }
 
     function addComment($id, Request $request)
     {
-
         $forum = Forums::where('id', $id)->first();
         $user = Auth::user();
 
@@ -154,7 +230,7 @@ class ForumsController extends Controller
         $comment->comment = $request->comment;
         $comment->save();
 
-        // Create audit trail entry (non-blocking after comment creation successful)
+        // audit trail (non-blocking)
         try {
             $audit = new ResponseAuditTrails();
             $audit->forumId = $forum->id;
@@ -169,14 +245,23 @@ class ForumsController extends Controller
             Log::error($th->getMessage());
         }
 
-        $response = $forum->load('category', 'creator',  'reactions', 'reactionsUp', 'reactionsDown', 'reactionsHeart', 'reactions.user', 'comments', 'comments.user');
+        $response = $forum->load(
+            'category',
+            'creator',
+            'reactions',
+            'reactionsUp',
+            'reactionsDown',
+            'reactionsHeart',
+            'reactions.user',
+            'comments',
+            'comments.user'
+        );
 
         return response()->json($response, 200);
     }
 
     function addReaction($id, Request $request)
     {
-
         $forum = Forums::where('id', $id)->first();
         $user = Auth::user();
 
@@ -186,12 +271,9 @@ class ForumsController extends Controller
         ])->first();
 
         if ($forumReaction) {
-
             if ($forumReaction->type == $request->type) {
-                // Delete reaction
                 $forumReaction->delete();
-                
-                // Create audit trail entry
+
                 $audit = new ResponseAuditTrails();
                 $audit->forumId = $forum->id;
                 $audit->responseId = $forumReaction->id;
@@ -202,15 +284,11 @@ class ForumsController extends Controller
                 $audit->userAgent = $request->userAgent();
                 $audit->save();
             } else {
-                // Store previous type for audit
                 $previousType = $forumReaction->type;
-                
-                $forumReaction->forum_id = $forum->id;
+
                 $forumReaction->type = $request->type;
-                $forumReaction->user_id = $user->id;
                 $forumReaction->save();
-                
-                // Create audit trail entry
+
                 $audit = new ResponseAuditTrails();
                 $audit->forumId = $forum->id;
                 $audit->responseId = $forumReaction->id;
@@ -228,8 +306,7 @@ class ForumsController extends Controller
             $reaction->user_id = $user->id;
             $reaction->type = $request->type;
             $reaction->save();
-            
-            // Create audit trail entry
+
             $audit = new ResponseAuditTrails();
             $audit->forumId = $forum->id;
             $audit->responseId = $reaction->id;
@@ -241,7 +318,17 @@ class ForumsController extends Controller
             $audit->save();
         }
 
-        $response = $forum->load('category', 'creator',  'reactions', 'reactionsUp', 'reactionsDown', 'reactionsHeart', 'reactions.user', 'comments', 'comments.user');
+        $response = $forum->load(
+            'category',
+            'creator',
+            'reactions',
+            'reactionsUp',
+            'reactionsDown',
+            'reactionsHeart',
+            'reactions.user',
+            'comments',
+            'comments.user'
+        );
 
         return response()->json($response, 200);
     }
@@ -249,43 +336,28 @@ class ForumsController extends Controller
     function deleteComment($commentId, Request $request)
     {
         try {
-            // Validate comment ID
             $request->merge(['commentId' => $commentId]);
             $request->validate([
                 'commentId' => 'required|uuid|exists:forum_comments,id'
             ]);
 
-            $user = Auth::user();
-            $comment = ForumComments::findOrFail($commentId);
-            
-            // Check permissions
-            $canDelete = false;
-            
-            // User can delete their own comments
-            if ($comment->user_id === $user->id) {
-                $canDelete = true;
-            }
-            
-            // Admin can delete any comment
-            $userClaims = Auth::parseToken()->getPayload()->get('claims') ?? [];
-            if (in_array('FORUM_DELETE_COMMENT', $userClaims, true)) {
-                $canDelete = true;
-            }            
-            if (!$canDelete) {
+            // ✅ Only Super Admin can delete comments
+            if (!$this->currentUserIsSuperAdmin()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'You don\'t have permission to delete this comment'
+                    'message' => 'Only Super Admin can delete comments.'
                 ], 403);
             }
 
-            // Get forum ID before deletion for audit trail
+            $user = Auth::user();
+            $comment = ForumComments::findOrFail($commentId);
+
             $forumId = $comment->forum_id;
             $commentContent = $comment->comment;
-            
-            // Delete the comment
+
             $comment->delete();
-            
-            // Create audit trail entry (non-blocking after deletion successful)
+
+            // audit trail (non-blocking)
             try {
                 $audit = new ResponseAuditTrails();
                 $audit->forumId = $forumId;
@@ -300,14 +372,14 @@ class ForumsController extends Controller
             } catch (\Throwable $th) {
                 Log::error('Audit trail creation failed: ' . $th->getMessage());
             }
-                     
+
             return response()->json([
                 'success' => true,
                 'message' => 'Comment deleted successfully'
             ], 200);
-            
+
         } catch (\Illuminate\Validation\ValidationException $e) {
-            throw $e; // Let Laravel handle validation errors (422 response)
+            throw $e;
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
