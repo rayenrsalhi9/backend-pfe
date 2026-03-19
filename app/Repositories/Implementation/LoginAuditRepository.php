@@ -5,7 +5,7 @@ namespace App\Repositories\Implementation;
 use App\Models\LoginAudit;
 use App\Repositories\Implementation\BaseRepository;
 use App\Repositories\Contracts\LoginAuditRepositoryInterface;
-
+use Carbon\Carbon;
 
 //use Your Model
 
@@ -47,8 +47,20 @@ class LoginAuditRepository extends BaseRepository implements LoginAuditRepositor
             $query = $query->orderBy('status', $direction);
         }
 
-        if ($attributes->userName) {
+        if (isset($attributes->userName) && $attributes->userName) {
             $query = $query->where('userName', 'like', '%' . $attributes->userName . '%');
+        }
+
+        if (isset($attributes->status) && $attributes->status) {
+            $query = $query->where('status', '=', $attributes->status);
+        }
+
+        if (isset($attributes->loginTime) && $attributes->loginTime) {
+            $date = date('Y-m-d', strtotime(str_replace('/', '-', $attributes->loginTime)));
+            $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
+            $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
+            $query = $query->whereDate('loginTime', '>=', $startDate)
+                ->whereDate('loginTime', '<=', $endDate);
         }
 
         $results = $query->skip($attributes->skip)->take($attributes->pageSize)->get();
@@ -60,8 +72,20 @@ class LoginAuditRepository extends BaseRepository implements LoginAuditRepositor
     {
         $query = LoginAudit::query();
 
-        if ($attributes->userName) {
+        if (isset($attributes->userName) && $attributes->userName) {
             $query = $query->where('userName', 'like', '%' . $attributes->userName . '%');
+        }
+
+        if (isset($attributes->status) && $attributes->status) {
+            $query = $query->where('status', '=', $attributes->status);
+        }
+
+        if (isset($attributes->loginTime) && $attributes->loginTime) {
+            $date = date('Y-m-d', strtotime(str_replace('/', '-', $attributes->loginTime)));
+            $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
+            $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
+            $query = $query->whereDate('loginTime', '>=', $startDate)
+                ->whereDate('loginTime', '<=', $endDate);
         }
 
         $count = $query->count();

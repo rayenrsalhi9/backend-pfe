@@ -44,7 +44,7 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
     public function getDocuments($attributes)
     {
 
-        $query = Documents::select(['documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName', DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName")])
+        $query = Documents::select(['documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName', 'users.email as createdByEmail', DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName")])
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
             ->join('users', 'documents.createdBy', '=', 'users.id');
 
@@ -304,6 +304,7 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             ->get();
         $query = Documents::select([
             'documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName',
+            'users.email as createdByEmail',
             DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName"),
             DB::raw("(SELECT max(documentUserPermissions.endDate) FROM documentUserPermissions
                      WHERE documentUserPermissions.documentId = documents.id and documentUserPermissions.isTimeBound =1
