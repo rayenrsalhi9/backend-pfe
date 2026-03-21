@@ -37,7 +37,7 @@ class DocumentAuditTrailRepository extends BaseRepository implements DocumentAud
     public function getDocumentAuditTrails($attributes)
     {
 
-        $query = DocumentAuditTrails::select(['documentAuditTrails.*', 'documents.name as documentName', 'categories.name as categoryName', 'roles.name as permissionRole', DB::raw("CONCAT(userRole.firstName,' ', userRole.lastName) as permissionUser"), DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdBy"), 'users.email as createdByEmail'])
+        $query = DocumentAuditTrails::select(['documentAuditTrails.*', 'documents.name as documentName', 'categories.name as categoryName', 'roles.name as permissionRole', DB::raw("CONCAT(userRole.firstName,' ', userRole.lastName) as permissionUser"), 'userRole.email as permissionUserEmail', DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdBy"), 'users.email as createdByEmail'])
             ->join('documents', 'documentAuditTrails.documentId', '=', 'documents.id')
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
             ->join('users', 'documentAuditTrails.createdBy', '=', 'users.id')
