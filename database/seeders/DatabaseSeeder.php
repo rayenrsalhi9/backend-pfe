@@ -23,7 +23,8 @@ class DatabaseSeeder extends Seeder
             PermissionSeederV21::class,
             PermissionSeederV23::class,
             ForumCommentPermissionSeeder::class,
-            ForumPermissionSeeder::class
+            ForumPermissionSeeder::class,
+            AdditionalPermissionSeeder::class
         ]);
     }
 }
