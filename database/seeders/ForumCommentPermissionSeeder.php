@@ -44,67 +44,6 @@ class ForumCommentPermissionSeeder extends Seeder
         }
         
 
-        // Check if delete comment action already exists
-        $existingAction = DB::table('actions')->where('code', 'FORUM_DELETE_COMMENT')->first();
-        
-        if (!$existingAction) {
-            // Wrap both inserts in a transaction to ensure atomicity
-            DB::transaction(function () use ($forumPage, $defaultUserId, $now) {
-                // Create delete comment action using raw SQL
-                $deleteActionId = Str::uuid();
-                DB::table('actions')->insert([
-                    'id' => $deleteActionId,
-                    'name' => 'Delete Forum Comments',
-                    'order' => 4,
-                    'pageId' => $forumPage->id,
-                    'code' => 'FORUM_DELETE_COMMENT',
-                    'createdBy' => $defaultUserId,
-                    'modifiedBy' => $defaultUserId,
-                    'isDeleted' => 0,
-                    'createdDate' => $now,
-                    'modifiedDate' => $now
-                ]);
 
-                // Assign to Admin role using raw SQL
-                DB::table('roleClaims')->insert([
-                    'id' => Str::uuid(),
-                    'actionId' => $deleteActionId,
-                    'roleId' => 'f8b6ace9-a625-4397-bdf8-f34060dbd8e4', // Admin role ID
-                    'claimType' => 'FORUM_DELETE_COMMENT',
-                    'claimValue' => null
-                ]);
-            });
-        }
-
-        // Check if view forums action already exists
-        $viewAction = DB::table('actions')->where('code', 'FORUM_VIEW_FORUMS')->first();
-
-        if (!$viewAction) {
-            DB::transaction(function () use ($forumPage, $defaultUserId, $now) {
-                // Create view forums action
-                $viewActionId = Str::uuid();
-                DB::table('actions')->insert([
-                    'id' => $viewActionId,
-                    'name' => 'View Forums',
-                    'order' => 1,
-                    'pageId' => $forumPage->id,
-                    'code' => 'FORUM_VIEW_FORUMS',
-                    'createdBy' => $defaultUserId,
-                    'modifiedBy' => $defaultUserId,
-                    'isDeleted' => 0,
-                    'createdDate' => $now,
-                    'modifiedDate' => $now
-                ]);
-
-                // Assign to Admin role
-                DB::table('roleClaims')->insert([
-                    'id' => Str::uuid(),
-                    'actionId' => $viewActionId,
-                    'roleId' => 'f8b6ace9-a625-4397-bdf8-f34060dbd8e4', // Admin role ID
-                    'claimType' => 'FORUM_VIEW_FORUMS',
-                    'claimValue' => null
-                ]);
-            });
-        }
     }
 }

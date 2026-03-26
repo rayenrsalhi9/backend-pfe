@@ -19,36 +19,48 @@ class ForumsController extends Controller
 {
     /**
      * True if authenticated user has role: roles.name = "Super Admin"
-     * Pivot table in your DB is: userroles (NOT user_roles)
+     * Pivot table in your DB is: userRoles (NOT user_roles)
      * We still auto-detect columns to be safe.
      */
     private function currentUserIsSuperAdmin(): bool
     {
         $user = Auth::user();
-        if (!$user) return false;
+        if (!$user)
+            return false;
 
         // detect pivot table
         $pivotTable = null;
-        foreach (['userroles', 'user_roles', 'role_user', 'users_roles'] as $candidate) {
+        $candidates = class_exists(\App\Models\UserRoles::class) 
+            ? [(new \App\Models\UserRoles())->getTable(), 'userroles', 'user_roles', 'role_user', 'users_roles']
+            : ['userRoles', 'userroles', 'user_roles', 'role_user', 'users_roles'];
+        foreach ($candidates as $candidate) {
             if (Schema::hasTable($candidate)) {
                 $pivotTable = $candidate;
                 break;
             }
         }
-        if (!$pivotTable || !Schema::hasTable('roles')) return false;
+        if (!$pivotTable || !Schema::hasTable('roles'))
+            return false;
 
         // detect columns
         $userCol = null;
         foreach (['userId', 'user_id', 'userid', 'userID'] as $c) {
-            if (Schema::hasColumn($pivotTable, $c)) { $userCol = $c; break; }
+            if (Schema::hasColumn($pivotTable, $c)) {
+                $userCol = $c;
+                break;
+            }
         }
 
         $roleCol = null;
         foreach (['roleId', 'role_id', 'roleid', 'roleID'] as $c) {
-            if (Schema::hasColumn($pivotTable, $c)) { $roleCol = $c; break; }
+            if (Schema::hasColumn($pivotTable, $c)) {
+                $roleCol = $c;
+                break;
+            }
         }
 
-        if (!$userCol || !$roleCol) return false;
+        if (!$userCol || !$roleCol)
+            return false;
 
         $q = DB::table($pivotTable)
             ->join('roles', 'roles.id', '=', $pivotTable . '.' . $roleCol)
@@ -154,7 +166,7 @@ class ForumsController extends Controller
         try {
             $forum = new Forums();
             $forum->title = $request->title;
-            $forum->content = $request->content;
+            $forum->content = $request->input('content');
             $forum->privacy = $request->private ? 'private' : 'public';
             $forum->created_by = $user->id;
             $forum->category_id = $request->category;
@@ -186,22 +198,23 @@ class ForumsController extends Controller
         try {
             $forum = Forums::where('id', $id)->first();
             $forum->title = $request->title;
-            $forum->content = $request->content;
+            $forum->content = $request->input('content');
             $forum->privacy = $request->private ? 'private' : 'public';
-            $forum->created_by = $user->id;
             $forum->category_id = $request->category;
             $forum->closed = $request->closed;
             $forum->save();
 
-            if ($tags && count($tags) > 0) {
+            if ($tags !== null) {
                 Tags::where('forum_id', $forum->id)->delete();
 
-                foreach ($tags as $tag) {
-                    $forumTag = new Tags();
-                    $forumTag->forum_id = $forum->id;
-                    $forumTag->metatag = $tag['label'];
-                    $forumTag->created_by = $user->id;
-                    $forumTag->save();
+                if (count($tags) > 0) {
+                    foreach ($tags as $tag) {
+                        $forumTag = new Tags();
+                        $forumTag->forum_id = $forum->id;
+                        $forumTag->metatag = $tag['label'];
+                        $forumTag->created_by = $user->id;
+                        $forumTag->save();
+                    }
                 }
             }
 
@@ -214,7 +227,11 @@ class ForumsController extends Controller
 
     function delete($id)
     {
-        $forum = Forums::where('id', $id)->first();
+        $forum = Forums::find($id);
+        if (!$forum) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+        $this->authorize('delete', $forum);
         $forum->delete();
         return response()->json('successfully deleted', 200);
     }
@@ -274,31 +291,39 @@ class ForumsController extends Controller
             if ($forumReaction->type == $request->type) {
                 $forumReaction->delete();
 
-                $audit = new ResponseAuditTrails();
-                $audit->forumId = $forum->id;
-                $audit->responseId = $forumReaction->id;
-                $audit->responseType = 'reaction';
-                $audit->operationName = 'Deleted';
-                $audit->responseContent = $request->type;
-                $audit->ipAddress = $request->ip();
-                $audit->userAgent = $request->userAgent();
-                $audit->save();
+                try {
+                    $audit = new ResponseAuditTrails();
+                    $audit->forumId = $forum->id;
+                    $audit->responseId = $forumReaction->id;
+                    $audit->responseType = 'reaction';
+                    $audit->operationName = 'Deleted';
+                    $audit->responseContent = $request->type;
+                    $audit->ipAddress = $request->ip();
+                    $audit->userAgent = $request->userAgent();
+                    $audit->save();
+                } catch (\Throwable $th) {
+                    Log::error($th->getMessage());
+                }
             } else {
                 $previousType = $forumReaction->type;
 
                 $forumReaction->type = $request->type;
                 $forumReaction->save();
 
-                $audit = new ResponseAuditTrails();
-                $audit->forumId = $forum->id;
-                $audit->responseId = $forumReaction->id;
-                $audit->responseType = 'reaction';
-                $audit->operationName = 'Updated';
-                $audit->responseContent = $request->type;
-                $audit->previousContent = $previousType;
-                $audit->ipAddress = $request->ip();
-                $audit->userAgent = $request->userAgent();
-                $audit->save();
+                try {
+                    $audit = new ResponseAuditTrails();
+                    $audit->forumId = $forum->id;
+                    $audit->responseId = $forumReaction->id;
+                    $audit->responseType = 'reaction';
+                    $audit->operationName = 'Updated';
+                    $audit->responseContent = $request->type;
+                    $audit->previousContent = $previousType;
+                    $audit->ipAddress = $request->ip();
+                    $audit->userAgent = $request->userAgent();
+                    $audit->save();
+                } catch (\Throwable $th) {
+                    Log::error($th->getMessage());
+                }
             }
         } else {
             $reaction = new ForumReactions();
@@ -307,15 +332,19 @@ class ForumsController extends Controller
             $reaction->type = $request->type;
             $reaction->save();
 
-            $audit = new ResponseAuditTrails();
-            $audit->forumId = $forum->id;
-            $audit->responseId = $reaction->id;
-            $audit->responseType = 'reaction';
-            $audit->operationName = 'Created';
-            $audit->responseContent = $request->type;
-            $audit->ipAddress = $request->ip();
-            $audit->userAgent = $request->userAgent();
-            $audit->save();
+            try {
+                $audit = new ResponseAuditTrails();
+                $audit->forumId = $forum->id;
+                $audit->responseId = $reaction->id;
+                $audit->responseType = 'reaction';
+                $audit->operationName = 'Created';
+                $audit->responseContent = $request->type;
+                $audit->ipAddress = $request->ip();
+                $audit->userAgent = $request->userAgent();
+                $audit->save();
+            } catch (\Throwable $th) {
+                Log::error($th->getMessage());
+            }
         }
 
         $response = $forum->load(
