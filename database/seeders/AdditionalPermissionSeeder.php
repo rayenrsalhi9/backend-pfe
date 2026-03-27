@@ -22,7 +22,7 @@ class AdditionalPermissionSeeder extends Seeder
 
         $pagesData = [
             ['name' => 'Surveys', 'order' => 14],
-            ['name' => 'News', 'order' => 15],
+            ['name' => 'Articles', 'order' => 15],
             ['name' => 'Blogs', 'order' => 16]
         ];
 
@@ -43,7 +43,8 @@ class AdditionalPermissionSeeder extends Seeder
                     'modifiedDate' => $now
                 ]);
                 $pageIds[$pd['name']] = $pageId;
-            } else {
+            }
+            else {
                 $pageIds[$pd['name']] = $page->id;
             }
         }
@@ -55,16 +56,16 @@ class AdditionalPermissionSeeder extends Seeder
             ['code' => 'SURVEY_EDIT_SURVEY', 'name' => 'Edit Survey', 'order' => 3, 'page' => 'Surveys'],
             ['code' => 'SURVEY_DELETE_SURVEY', 'name' => 'Delete Survey', 'order' => 4, 'page' => 'Surveys'],
             ['code' => 'SURVEY_ANSWER_SURVEY', 'name' => 'Answer Survey', 'order' => 5, 'page' => 'Surveys'],
-            
-            // News
-            ['code' => 'NEWS_VIEW_NEWS', 'name' => 'View News', 'order' => 1, 'page' => 'News'],
-            ['code' => 'NEWS_ADD_NEWS', 'name' => 'Add News', 'order' => 2, 'page' => 'News'],
-            ['code' => 'NEWS_EDIT_NEWS', 'name' => 'Edit News', 'order' => 3, 'page' => 'News'],
-            ['code' => 'NEWS_DELETE_NEWS', 'name' => 'Delete News', 'order' => 4, 'page' => 'News'],
-            ['code' => 'NEWS_VIEW_CATEGORIES', 'name' => 'View News Categories', 'order' => 5, 'page' => 'News'],
-            ['code' => 'NEWS_ADD_CATEGORY', 'name' => 'Add News Category', 'order' => 6, 'page' => 'News'],
-            ['code' => 'NEWS_EDIT_CATEGORY', 'name' => 'Edit News Category', 'order' => 7, 'page' => 'News'],
-            ['code' => 'NEWS_DELETE_CATEGORY', 'name' => 'Delete News Category', 'order' => 8, 'page' => 'News'],
+
+            // Articles
+            ['code' => 'ARTICLE_VIEW_ARTICLES', 'name' => 'View Articles', 'order' => 1, 'page' => 'Articles'],
+            ['code' => 'ARTICLE_ADD_ARTICLE', 'name' => 'Add Article', 'order' => 2, 'page' => 'Articles'],
+            ['code' => 'ARTICLE_EDIT_ARTICLE', 'name' => 'Edit Article', 'order' => 3, 'page' => 'Articles'],
+            ['code' => 'ARTICLE_DELETE_ARTICLE', 'name' => 'Delete Article', 'order' => 4, 'page' => 'Articles'],
+            ['code' => 'ARTICLE_VIEW_CATEGORIES', 'name' => 'View Article Categories', 'order' => 5, 'page' => 'Articles'],
+            ['code' => 'ARTICLE_ADD_CATEGORY', 'name' => 'Add Article Category', 'order' => 6, 'page' => 'Articles'],
+            ['code' => 'ARTICLE_EDIT_CATEGORY', 'name' => 'Edit Article Category', 'order' => 7, 'page' => 'Articles'],
+            ['code' => 'ARTICLE_DELETE_CATEGORY', 'name' => 'Delete Article Category', 'order' => 8, 'page' => 'Articles'],
 
             // Blogs
             ['code' => 'BLOG_VIEW_BLOGS', 'name' => 'View Blogs', 'order' => 1, 'page' => 'Blogs'],
@@ -80,7 +81,7 @@ class AdditionalPermissionSeeder extends Seeder
 
         foreach ($allActions as $actionData) {
             $existingAction = DB::table('actions')->where('code', $actionData['code'])->first();
-            
+
             if (!$existingAction) {
                 $actionId = Str::uuid();
                 DB::table('actions')->insert([
@@ -104,16 +105,17 @@ class AdditionalPermissionSeeder extends Seeder
                     'claimType' => $actionData['code'],
                     'claimValue' => null
                 ]);
-            } else {
+            }
+            else {
                 DB::table('actions')
                     ->where('id', $existingAction->id)
                     ->update(['name' => $actionData['name']]);
-                
+
                 $existingClaim = DB::table('roleClaims')
                     ->where('actionId', $existingAction->id)
                     ->where('roleId', $adminRoleId)
                     ->first();
-                
+
                 if (!$existingClaim) {
                     DB::table('roleClaims')->insert([
                         'id' => Str::uuid(),
