@@ -48,4 +48,9 @@ class Articles extends Model
     {
         return $this->hasMany(ArticleImages::class);
     }
+
+    public function comments()
+    {
+        return $this->hasMany(ArticleComments::class, 'article_id', 'id')->orderBy('created_at', 'asc');
+    }
 }

@@ -11,10 +11,67 @@ use App\Http\Controllers\Controller;
 use App\Models\BlogComments;
 use App\Models\BlogReactions;
 use App\Models\Tags;
+use App\Models\ResponseAuditTrails;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class BlogsController extends Controller
 {
+    /**
+     * True if authenticated user has role: roles.name = "Super Admin"
+     */
+    private function currentUserIsSuperAdmin(): bool
+    {
+        $user = Auth::user();
+        if (!$user)
+            return false;
+
+        $pivotTable = null;
+        $candidates = ['userRoles', 'userroles', 'user_roles', 'role_user', 'users_roles'];
+        foreach ($candidates as $candidate) {
+            if (Schema::hasTable($candidate)) {
+                $pivotTable = $candidate;
+                break;
+            }
+        }
+        if (!$pivotTable || !Schema::hasTable('roles'))
+            return false;
+
+        $userCol = null;
+        foreach (['userId', 'user_id', 'userid', 'userID'] as $c) {
+            if (Schema::hasColumn($pivotTable, $c)) {
+                $userCol = $c;
+                break;
+            }
+        }
+
+        $roleCol = null;
+        foreach (['roleId', 'role_id', 'roleid', 'roleID'] as $c) {
+            if (Schema::hasColumn($pivotTable, $c)) {
+                $roleCol = $c;
+                break;
+            }
+        }
+
+        if (!$userCol || !$roleCol)
+            return false;
+
+        $q = DB::table($pivotTable)
+            ->join('roles', 'roles.id', '=', $pivotTable . '.' . $roleCol)
+            ->where($pivotTable . '.' . $userCol, '=', $user->id)
+            ->whereRaw('LOWER(roles.name) = ?', [strtolower('Super Admin')]);
+
+        if (Schema::hasColumn('roles', 'isDeleted')) {
+            $q->where('roles.isDeleted', 0);
+        }
+        if (Schema::hasColumn('roles', 'deleted_at')) {
+            $q->whereNull('roles.deleted_at');
+        }
+
+        return $q->exists();
+    }
 
     private function saveFile($image_64)
     {
@@ -48,6 +105,7 @@ class BlogsController extends Controller
 
         $query = Blogs::orderBy('created_at', 'DESC')
             ->with('category', 'creator', 'tags')
+            ->withCount(['comments'])
             ->when($limit, function ($query) use ($limit) {
                 return $query->take($limit);
             })
@@ -72,12 +130,26 @@ class BlogsController extends Controller
         }
 
         $blog = $query->get();
+
+        $canDelete = $this->currentUserIsSuperAdmin();
+        foreach ($blog as $b) {
+            $b->setAttribute('canDeleteComments', $canDelete);
+            $b->setAttribute('can_delete_comments', $canDelete);
+        }
+
         return response()->json($blog, 200);
     }
 
     function getOne($id)
     {
-        $blog = Blogs::where('id', $id)->with('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user', 'tags')->first();
+        $blog = Blogs::where('id', $id)->with('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user', 'tags')->withCount(['comments'])->first();
+
+        if ($blog) {
+            $canDelete = $this->currentUserIsSuperAdmin();
+            $blog->setAttribute('canDeleteComments', $canDelete);
+            $blog->setAttribute('can_delete_comments', $canDelete);
+        }
+
         return response()->json($blog, 200);
     }
 
@@ -222,5 +294,57 @@ class BlogsController extends Controller
         $response = $blog->load('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user');
 
         return response()->json($response, 200);
+    }
+
+    function deleteComment($commentId, Request $request)
+    {
+        try {
+            $request->merge(['commentId' => $commentId]);
+            $request->validate([
+                'commentId' => 'required|uuid|exists:blog_comments,id'
+            ]);
+
+            if (!$this->currentUserIsSuperAdmin()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only Super Admin can delete comments.'
+                ], 403);
+            }
+
+            $user = Auth::user();
+            $comment = BlogComments::findOrFail($commentId);
+
+            $blogId = $comment->blog_id;
+            $commentContent = $comment->comment;
+
+            $comment->delete();
+
+            // audit trail
+            try {
+                $audit = new ResponseAuditTrails();
+                $audit->blogId = $blogId;
+                $audit->responseId = $commentId;
+                $audit->responseType = 'comment';
+                $audit->operationName = 'Deleted';
+                $audit->responseContent = $commentContent;
+                $audit->ipAddress = $request->ip();
+                $audit->userAgent = $request->userAgent();
+                $audit->createdBy = $user->id;
+                $audit->save();
+            } catch (\Throwable $th) {
+                Log::error('Audit trail creation failed: ' . $th->getMessage());
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Comment deleted successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Comment deletion failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete comment'
+            ], 500);
+        }
     }
 }

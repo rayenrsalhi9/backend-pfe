@@ -372,6 +372,9 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
             Route::put('update/{id}', 'update');
             Route::post('create', 'create');
             Route::delete('delete/{id}', 'delete');
+
+            Route::middleware(['auth'])->post('comments/{id}', 'addComment');
+            Route::middleware(['auth'])->delete('comments/delete/{commentId}', 'deleteComment');
         });
 
         Route::prefix('categories')->controller(CategoriesController::class)->group(function () {
@@ -394,6 +397,7 @@ Route::prefix('blogs')->group(function () {
         Route::middleware(['auth'])->delete('delete/{id}', 'delete');
 
         Route::middleware(['auth'])->post('comments/{id}', 'addComment');
+        Route::middleware(['auth'])->delete('comments/delete/{commentId}', 'deleteComment');
         Route::middleware(['auth'])->post('reactions/{id}', 'addReaction');
     });
 
