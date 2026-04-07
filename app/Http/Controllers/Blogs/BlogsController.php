@@ -105,7 +105,7 @@ class BlogsController extends Controller
 
         $query = Blogs::orderBy('created_at', 'DESC')
             ->with('category', 'creator', 'tags')
-            ->withCount(['comments'])
+            ->withCount(['comments', 'reactions', 'reactionsUp', 'reactionsDown'])
             ->when($limit, function ($query) use ($limit) {
                 return $query->take($limit);
             })

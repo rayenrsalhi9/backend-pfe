@@ -100,7 +100,7 @@ class ArticlesController extends Controller
   function getAll(Request $request)
   {
 
-    
+    $user = Auth::user();
     $limit = $request->limit;
     $query = Articles::orderBy('created_at', 'DESC')
       ->with('category',  'creator')
@@ -108,16 +108,17 @@ class ArticlesController extends Controller
       ->when($limit, function ($query) use ($limit) {
         return $query->take($limit);
       })
-      // ->where(function ($query) use ($user) {
-      //   $query->where('privacy', 'public')
-      //     ->orWhere(function ($query) use ($user) {
-      //       $query->where('privacy', 'private')
-      //         ->whereHas('users', function ($query) use ($user) {
-      //           $query->where('user_id', $user->id);
-      //         });
-      //     });
-      // })
-      ;
+      ->where(function ($query) use ($user) {
+        $query->where('privacy', 'public');
+        if ($user) {
+          $query->orWhere(function ($query) use ($user) {
+            $query->where('privacy', 'private')
+              ->whereHas('users', function ($query) use ($user) {
+                $query->where('user_id', $user->id);
+              });
+          });
+        }
+      });
 
     if ($request->name) {
       $query->where('title', 'like', '%' . $request->name . '%')
