@@ -13,14 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Conversation extends Model
 {
-    use HasFactory;
-    use Notifiable, Uuids;
-
-    /**
-     * The table associated with the model.
-     *
-     * @var string
-     */
+    use HasFactory, Notifiable, Uuids;
     protected $table = 'conversations';
 
     protected $fillable = [
@@ -42,6 +35,7 @@ class Conversation extends Model
 
     public function lastMessage()
     {
-        return $this->hasOne(ConversationMessage::class)->latest('created_at');
+        return $this->hasOne(ConversationMessage::class, 'conversation_id', 'id')
+            ->orderBy('created_at', 'desc');
     }
 }

@@ -30,6 +30,12 @@ class UserController extends Controller
         return response()->json($this->userRepository->getUsersForDropdown());
     }
 
+    public function getUsersWithClaim(Request $request)
+    {
+        $claimType = $request->query('claim', 'CHAT_VIEW_CHATS');
+        return response()->json($this->userRepository->getUsersWithClaim($claimType));
+    }
+
     /**
      * Show the form for creating a new resource.
      *
@@ -72,13 +78,14 @@ class UserController extends Controller
     public function update(Request $request, $id)
     {
         $request->except(['password']);
-        $model = $this->userRepository->find($id);
+        $model = Users::findOrFail($id);
         $model->firstName = $request->firstName;
         $model->lastName = $request->lastName;
         $model->phoneNumber = $request->phoneNumber;
         $model->userName = $request->userName;
         $model->email = $request->email;
         $model->avatar = $request->avatar;
+        $model->direction = $request->direction;
 
         return  response()->json($this->userRepository->updateUser($model, $id, $request['roleIds']), 200);
     }
@@ -130,16 +137,12 @@ class UserController extends Controller
         return response()->json([], 200);
     }
    // Méthode pour récupérer la liste des employés
-   public function getEmployes()
-   {
-       $employes = Employe::all();
+    public function getEmployes()
+    {
+        $employes = Employe::all();
 
-       if ($employes->isEmpty()) {
-           return response()->json(['message' => 'Aucun employé trouvé'], 404);
-       }
-
-       return response()->json($employes);
-   }
+        return response()->json($employes);
+    }
 
    
     public function getAllPublic(Request $request)

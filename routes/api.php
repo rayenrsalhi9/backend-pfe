@@ -79,22 +79,27 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         }
 
         $channelName = $request->input('channel_name');
-        $pusher = new Pusher(
-            env('PUSHER_APP_KEY'),
-            env('PUSHER_APP_SECRET'),
-            env('PUSHER_APP_ID'),
-            [
-                'cluster' => env('PUSHER_APP_CLUSTER'),
-                'useTLS' => false
-            ]
-        );
+        
+        try {
+            $pusher = new Pusher(
+                config('broadcasting.connections.pusher.key'),
+                config('broadcasting.connections.pusher.secret'),
+                config('broadcasting.connections.pusher.app_id'),
+                [
+                    'cluster' => config('broadcasting.connections.pusher.options.cluster'),
+                    'useTLS' => config('broadcasting.connections.pusher.options.useTLS', true)
+                ]
+            );
 
-        $socketId = $request->input('socket_id');
-        $channelData = json_encode(['user_id' => $user->id]);
+            $socketId = $request->input('socket_id');
+            $channelData = json_encode(['user_id' => $user->id]);
 
-        $auth = $pusher->authorizeChannel($channelName, $socketId, $channelData);
+            $auth = $pusher->authorizeChannel($channelName, $socketId, $channelData);
 
-        return response($auth);
+            return response($auth);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Pusher authorization failed: ' . $e->getMessage()], 500);
+        }
     });
 
     Route::group(['middleware' => ['hasToken:USER_VIEW_USERS']], function () {
@@ -102,6 +107,8 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
     });
 
     Route::get('/user-dropdown', [UserController::class, 'dropdown']);
+
+    Route::get('/user-with-claim', [UserController::class, 'getUsersWithClaim']);
 
     Route::middleware('hasToken:USER_CREATE_USER')->group(function () {
         Route::post('/user', [UserController::class, 'create']);
@@ -351,39 +358,35 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
 
         Route::post('addUser', 'conversationAddUser');
+        Route::post('removeUser', 'conversationRemoveUser');
         Route::post('create', 'conversationCreate');
 
         Route::post('message', 'messageSend');
         Route::put('message/{id}/seen', 'messageSeen');
         Route::put('message/{id}/reaction', 'messageReaction');
     });
+});
 
-    
-        Route::get('/public-articles', [UserController::class, 'getAllPublic'])->withoutMiddleware('auth');
-   
-    
-    
+Route::get('/public-articles', [UserController::class, 'getAllPublic']);
 
-    Route::prefix('articles')->group(function () {
+Route::prefix('articles')->group(function () {
+    Route::controller(ArticlesController::class)->group(function () {
+        Route::get('', 'getAll');
+        Route::get('/get/{id}', 'getOne');
+        Route::middleware(['auth'])->put('update/{id}', 'update');
+        Route::middleware(['auth'])->post('create', 'create');
+        Route::middleware(['auth'])->delete('delete/{id}', 'delete');
 
-        Route::controller(ArticlesController::class)->group(function () {
-            Route::get('', 'getAll');
-            Route::get('/get/{id}', 'getOne');
-            Route::put('update/{id}', 'update');
-            Route::post('create', 'create');
-            Route::delete('delete/{id}', 'delete');
+        Route::middleware(['auth'])->post('comments/{id}', 'addComment');
+        Route::middleware(['auth'])->delete('comments/delete/{commentId}', 'deleteComment');
+    });
 
-            Route::middleware(['auth'])->post('comments/{id}', 'addComment');
-            Route::middleware(['auth'])->delete('comments/delete/{commentId}', 'deleteComment');
-        });
-
-        Route::prefix('categories')->controller(CategoriesController::class)->group(function () {
-            Route::get('', 'getAll');
-            Route::get('/get/{id}', 'getOne');
-            Route::put('update/{id}', 'update');
-            Route::post('create', 'create');
-            Route::delete('delete/{id}', 'delete');
-        });
+    Route::prefix('categories')->controller(CategoriesController::class)->group(function () {
+        Route::get('', 'getAll');
+        Route::get('/get/{id}', 'getOne');
+        Route::middleware(['auth'])->put('update/{id}', 'update');
+        Route::middleware(['auth'])->post('create', 'create');
+        Route::middleware(['auth'])->delete('delete/{id}', 'delete');
     });
 });
 

@@ -10,4 +10,5 @@ interface UserRepositoryInterface extends BaseRepositoryInterface
     public function updateUser($model, $id, $userRoles);
     public function updateUserProfile($request);
     public function getUsersForDropdown();
+    public function getUsersWithClaim($claimType);
 }
