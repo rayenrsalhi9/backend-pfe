@@ -130,14 +130,20 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
         return $result;
     }
 
-    public function markAllAsRead()
+    public function markAllAsRead($options = [])
     {
         $userId = Auth::parseToken()->getPayload()->get('userId');
         if ($userId == null) {
             throw new RepositoryException('User does not exist.');
         }
 
-        $userNotifications = UserNotifications::where('userId', $userId)->get();
+        $query = UserNotifications::where('userId', $userId);
+
+        if (isset($options['excludeTypes']) && is_array($options['excludeTypes'])) {
+            $query->whereNotIn('type', $options['excludeTypes']);
+        }
+
+        $userNotifications = $query->get();
 
         foreach ($userNotifications as $userNotification) {
             $userNotification->isRead = true;

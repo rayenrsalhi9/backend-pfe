@@ -61,7 +61,7 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
 
     public function getUsersForDropdown()
     {
-        $users = Users::select(['id', 'firstName', 'lastName', 'userName', 'email'])->get();
+        $users = Users::select(['id', 'firstName', 'lastName', 'userName', 'email', 'avatar'])->get();
         return $users;
     }
 
