@@ -41,10 +41,15 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         return Documents::class;
     }
 
-    public function getDocuments($attributes)
+    public function getDocuments($attributes, $includeCreatorEmail = false)
     {
+        $selectColumns = ['documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName', DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName")];
+        
+        if ($includeCreatorEmail) {
+            $selectColumns[] = 'users.email as createdByEmail';
+        }
 
-        $query = Documents::select(['documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName', 'users.email as createdByEmail', DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName")])
+        $query = Documents::select($selectColumns)
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
             ->join('users', 'documents.createdBy', '=', 'users.id');
 
@@ -296,15 +301,15 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         }
     }
 
-    public function assignedDocuments($attributes)
+    public function assignedDocuments($attributes, $includeCreatorEmail = false)
     {
         $userId = Auth::parseToken()->getPayload()->get('userId');
         $userRoles = UserRoles::select('roleId')
             ->where('userId', $userId)
             ->get();
-        $query = Documents::select([
+            
+        $selectColumns = [
             'documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName',
-            'users.email as createdByEmail',
             DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName"),
             DB::raw("(SELECT max(documentUserPermissions.endDate) FROM documentUserPermissions
                      WHERE documentUserPermissions.documentId = documents.id and documentUserPermissions.isTimeBound =1
@@ -312,7 +317,13 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             DB::raw("(SELECT max(documentRolePermissions.endDate) FROM documentRolePermissions
                      WHERE documentRolePermissions.documentId = documents.id and documentRolePermissions.isTimeBound =1
                      GROUP BY documentRolePermissions.documentId) as maxRolePermissionEndDate"),
-        ])
+        ];
+        
+        if ($includeCreatorEmail) {
+            $selectColumns[] = 'users.email as createdByEmail';
+        }
+        
+        $query = Documents::select($selectColumns)
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
             ->join('users', 'documents.createdBy', '=', 'users.id')
             ->where(function ($query) use ($userId, $userRoles) {

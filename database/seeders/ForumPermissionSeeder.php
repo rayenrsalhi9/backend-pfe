@@ -79,7 +79,11 @@ class ForumPermissionSeeder extends Seeder
                 // Update name if it's different (optional, for consistency)
                 DB::table('actions')
                     ->where('id', $existingAction->id)
-                    ->update(['name' => $actionData['name']]);
+                    ->update([
+                        'name' => $actionData['name'],
+                        'modifiedBy' => $defaultUserId,
+                        'modifiedDate' => $now
+                    ]);
                 
                 // Ensure it's assigned to Admin role
                 $existingClaim = DB::table('roleClaims')

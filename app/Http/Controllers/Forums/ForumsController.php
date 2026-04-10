@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Forums;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\HasPermissionTrait;
 use App\Models\ForumComments;
 use App\Models\ForumReactions;
 use App\Models\Forums;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Schema;
 
 class ForumsController extends Controller
 {
+    use HasPermissionTrait;
     /**
      * True if authenticated user has role: roles.name = "Super Admin"
      * Pivot table in your DB is: userRoles (NOT user_roles)
@@ -121,8 +123,8 @@ class ForumsController extends Controller
 
         $forums = $query->get();
 
-        // expose capability so UI can show delete button only for super admin
-        $canDelete = $this->currentUserIsSuperAdmin();
+        // expose capability so UI can show delete button based on claims
+        $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
         foreach ($forums as $f) {
             $f->setAttribute('canDeleteComments', $canDelete);
             $f->setAttribute('can_delete_comments', $canDelete);
@@ -150,7 +152,7 @@ class ForumsController extends Controller
             ->first();
 
         if ($forum) {
-            $canDelete = $this->currentUserIsSuperAdmin();
+            $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
             $forum->setAttribute('canDeleteComments', $canDelete);
             $forum->setAttribute('can_delete_comments', $canDelete);
         }
@@ -231,7 +233,9 @@ class ForumsController extends Controller
         if (!$forum) {
             return response()->json(['message' => 'Not found'], 404);
         }
+
         $this->authorize('delete', $forum);
+        
         $forum->delete();
         return response()->json('successfully deleted', 200);
     }
@@ -257,6 +261,7 @@ class ForumsController extends Controller
             $audit->responseContent = $request->comment;
             $audit->ipAddress = $request->ip();
             $audit->userAgent = $request->userAgent();
+            $audit->createdBy = $user->id;
             $audit->save();
         } catch (\Throwable $th) {
             Log::error($th->getMessage());
@@ -300,6 +305,7 @@ class ForumsController extends Controller
                     $audit->responseContent = $request->type;
                     $audit->ipAddress = $request->ip();
                     $audit->userAgent = $request->userAgent();
+                    $audit->createdBy = $user->id;
                     $audit->save();
                 } catch (\Throwable $th) {
                     Log::error($th->getMessage());
@@ -320,6 +326,7 @@ class ForumsController extends Controller
                     $audit->previousContent = $previousType;
                     $audit->ipAddress = $request->ip();
                     $audit->userAgent = $request->userAgent();
+                    $audit->createdBy = $user->id;
                     $audit->save();
                 } catch (\Throwable $th) {
                     Log::error($th->getMessage());
@@ -341,6 +348,7 @@ class ForumsController extends Controller
                 $audit->responseContent = $request->type;
                 $audit->ipAddress = $request->ip();
                 $audit->userAgent = $request->userAgent();
+                $audit->createdBy = $user->id;
                 $audit->save();
             } catch (\Throwable $th) {
                 Log::error($th->getMessage());
@@ -370,11 +378,11 @@ class ForumsController extends Controller
                 'commentId' => 'required|uuid|exists:forum_comments,id'
             ]);
 
-            // ✅ Only Super Admin can delete comments
-            if (!$this->currentUserIsSuperAdmin()) {
+            // ✅ Only users with FORUM_DELETE_COMMENT permission can delete comments
+            if (!$this->hasPermission('FORUM_DELETE_COMMENT')) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Only Super Admin can delete comments.'
+                    'message' => 'You do not have permission to delete comments.'
                 ], 403);
             }
 

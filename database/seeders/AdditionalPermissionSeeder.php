@@ -22,7 +22,6 @@ class AdditionalPermissionSeeder extends Seeder
 
         $pagesData = [
             ['name' => 'Surveys', 'order' => 14],
-            ['name' => 'Articles', 'order' => 15],
             ['name' => 'Blogs', 'order' => 16]
         ];
 
@@ -45,6 +44,13 @@ class AdditionalPermissionSeeder extends Seeder
                 $pageIds[$pd['name']] = $pageId;
             }
             else {
+                if ($pd['name'] === 'Blogs' && $page->order !== 16) {
+                    DB::table('pages')->where('id', $page->id)->update([
+                        'order' => 16,
+                        'modifiedBy' => $defaultUserId,
+                        'modifiedDate' => $now
+                    ]);
+                }
                 $pageIds[$pd['name']] = $page->id;
             }
         }
@@ -56,16 +62,6 @@ class AdditionalPermissionSeeder extends Seeder
             ['code' => 'SURVEY_EDIT_SURVEY', 'name' => 'Edit Survey', 'order' => 3, 'page' => 'Surveys'],
             ['code' => 'SURVEY_DELETE_SURVEY', 'name' => 'Delete Survey', 'order' => 4, 'page' => 'Surveys'],
             ['code' => 'SURVEY_ANSWER_SURVEY', 'name' => 'Answer Survey', 'order' => 5, 'page' => 'Surveys'],
-
-            // Articles
-            ['code' => 'ARTICLE_VIEW_ARTICLES', 'name' => 'View Articles', 'order' => 1, 'page' => 'Articles'],
-            ['code' => 'ARTICLE_ADD_ARTICLE', 'name' => 'Add Article', 'order' => 2, 'page' => 'Articles'],
-            ['code' => 'ARTICLE_EDIT_ARTICLE', 'name' => 'Edit Article', 'order' => 3, 'page' => 'Articles'],
-            ['code' => 'ARTICLE_DELETE_ARTICLE', 'name' => 'Delete Article', 'order' => 4, 'page' => 'Articles'],
-            ['code' => 'ARTICLE_VIEW_CATEGORIES', 'name' => 'View Article Categories', 'order' => 5, 'page' => 'Articles'],
-            ['code' => 'ARTICLE_ADD_CATEGORY', 'name' => 'Add Article Category', 'order' => 6, 'page' => 'Articles'],
-            ['code' => 'ARTICLE_EDIT_CATEGORY', 'name' => 'Edit Article Category', 'order' => 7, 'page' => 'Articles'],
-            ['code' => 'ARTICLE_DELETE_CATEGORY', 'name' => 'Delete Article Category', 'order' => 8, 'page' => 'Articles'],
 
             // Blogs
             ['code' => 'BLOG_VIEW_BLOGS', 'name' => 'View Blogs', 'order' => 1, 'page' => 'Blogs'],
@@ -109,7 +105,11 @@ class AdditionalPermissionSeeder extends Seeder
             else {
                 DB::table('actions')
                     ->where('id', $existingAction->id)
-                    ->update(['name' => $actionData['name']]);
+                    ->update([
+                        'name' => $actionData['name'],
+                        'modifiedBy' => $defaultUserId,
+                        'modifiedDate' => $now
+                    ]);
 
                 $existingClaim = DB::table('roleClaims')
                     ->where('actionId', $existingAction->id)

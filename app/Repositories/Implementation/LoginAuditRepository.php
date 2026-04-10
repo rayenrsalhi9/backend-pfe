@@ -6,15 +6,14 @@ use App\Models\LoginAudit;
 use App\Repositories\Implementation\BaseRepository;
 use App\Repositories\Contracts\LoginAuditRepositoryInterface;
 use Carbon\Carbon;
-
-//use Your Model
+use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Class ScreenRepository.
+ * Class LoginAuditRepository.
  */
 class LoginAuditRepository extends BaseRepository implements LoginAuditRepositoryInterface
 {
-      /**
+    /**
      * @var Model
      */
     protected $model;
@@ -28,12 +27,12 @@ class LoginAuditRepository extends BaseRepository implements LoginAuditRepositor
     {
         return LoginAudit::class;
     }
+
     public function getLoginAudits($attributes)
     {
-
         $query = LoginAudit::select();
 
-        $orderByArray =  explode(' ', $attributes->orderBy);
+        $orderByArray = explode(' ', $attributes->orderBy);
         $orderBy = $orderByArray[0];
         $direction = $orderByArray[1] ?? 'asc';
 
@@ -47,21 +46,7 @@ class LoginAuditRepository extends BaseRepository implements LoginAuditRepositor
             $query = $query->orderBy('status', $direction);
         }
 
-        if (isset($attributes->userName) && $attributes->userName) {
-            $query = $query->where('userName', 'like', '%' . $attributes->userName . '%');
-        }
-
-        if (isset($attributes->status) && $attributes->status) {
-            $query = $query->where('status', '=', $attributes->status);
-        }
-
-        if (isset($attributes->loginTime) && $attributes->loginTime) {
-            $date = date('Y-m-d', strtotime(str_replace('/', '-', $attributes->loginTime)));
-            $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-            $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-            $query = $query->whereDate('loginTime', '>=', $startDate)
-                ->whereDate('loginTime', '<=', $endDate);
-        }
+        $query = $this->applyFilters($query, $attributes);
 
         $results = $query->skip($attributes->skip)->take($attributes->pageSize)->get();
 
@@ -72,6 +57,23 @@ class LoginAuditRepository extends BaseRepository implements LoginAuditRepositor
     {
         $query = LoginAudit::query();
 
+        $query = $this->applyFilters($query, $attributes);
+
+        $count = $query->count();
+        return $count;
+    }
+
+    /**
+     * Apply filters to the query based on provided attributes.
+     * Extracts common filter logic used by both getLoginAudits and getLoginAuditsCount.
+     *
+     * @param Builder $query
+     * @param mixed $attributes
+     * @return Builder
+     * @throws \InvalidArgumentException when loginTime format is invalid
+     */
+    private function applyFilters(Builder $query, $attributes): Builder
+    {
         if (isset($attributes->userName) && $attributes->userName) {
             $query = $query->where('userName', 'like', '%' . $attributes->userName . '%');
         }
@@ -81,15 +83,18 @@ class LoginAuditRepository extends BaseRepository implements LoginAuditRepositor
         }
 
         if (isset($attributes->loginTime) && $attributes->loginTime) {
-            $date = date('Y-m-d', strtotime(str_replace('/', '-', $attributes->loginTime)));
-            $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-            $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-            $query = $query->whereDate('loginTime', '>=', $startDate)
-                ->whereDate('loginTime', '<=', $endDate);
+            try {
+                $parsed = Carbon::parse(str_replace('/', '-', $attributes->loginTime));
+                $startDate = $parsed->copy()->startOfDay();
+                $endDate = $parsed->copy()->endOfDay();
+                
+                $query = $query->where('loginTime', '>=', $startDate)
+                    ->where('loginTime', '<=', $endDate);
+            } catch (\Exception $e) {
+                throw new \InvalidArgumentException('Invalid loginTime format. Please use a valid date format (e.g., YYYY-MM-DD or DD/MM/YYYY).');
+            }
         }
 
-        $count = $query->count();
-        return $count;
+        return $query;
     }
-
 }

@@ -9,6 +9,7 @@ use App\Models\DocumentVersions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Auth;
 use League\CommonMark\Node\Block\Document;
 use App\Repositories\Contracts\DocumentRepositoryInterface;
 use App\Repositories\Contracts\DocumentTokenRepositoryInterface;
@@ -38,9 +39,11 @@ class DocumentController extends Controller
     public function getDocuments(Request $request)
     {
         $queryString = (object) $request->all();
+        
+        $includeCreatorEmail = $this->userHasAdminClaim();
 
         $count = $this->documentRepository->getDocumentsCount($queryString);
-        return response()->json($this->documentRepository->getDocuments($queryString))
+        return response()->json($this->documentRepository->getDocuments($queryString, $includeCreatorEmail))
             ->withHeaders(['totalCount' => $count, 'pageSize' => $queryString->pageSize, 'skip' => $queryString->skip]);
     }
 
@@ -161,8 +164,10 @@ class DocumentController extends Controller
     {
         $queryString = (object) $request->all();
 
+        $includeCreatorEmail = $this->userHasAdminClaim();
+
         $count = $this->documentRepository->assignedDocumentsCount($queryString);
-        return response()->json($this->documentRepository->assignedDocuments($queryString))
+        return response()->json($this->documentRepository->assignedDocuments($queryString, $includeCreatorEmail))
             ->withHeaders(['totalCount' => $count, 'pageSize' => $queryString->pageSize, 'skip' => $queryString->skip]);
     }
 
@@ -175,5 +180,21 @@ class DocumentController extends Controller
     {
         $this->userNotificationRepository->markAsReadByDocumentId($id);
         return response()->json($this->documentRepository->getDocumentbyId($id));
+    }
+
+    /**
+     * Check if the authenticated user has admin-level claims to view creator email
+     */
+    private function userHasAdminClaim(): bool
+    {
+        try {
+            $claims = Auth::parseToken()->getPayload()->get('claims');
+            if (!is_array($claims)) {
+                return false;
+            }
+            return in_array('ALL_DOCUMENTS_VIEW_DOCUMENTS', $claims);
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 }

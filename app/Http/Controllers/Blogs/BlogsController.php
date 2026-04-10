@@ -8,6 +8,7 @@ use App\Models\ArticleUsers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\HasPermissionTrait;
 use App\Models\BlogComments;
 use App\Models\BlogReactions;
 use App\Models\Tags;
@@ -19,59 +20,7 @@ use Illuminate\Support\Facades\Schema;
 
 class BlogsController extends Controller
 {
-    /**
-     * True if authenticated user has role: roles.name = "Super Admin"
-     */
-    private function currentUserIsSuperAdmin(): bool
-    {
-        $user = Auth::user();
-        if (!$user)
-            return false;
-
-        $pivotTable = null;
-        $candidates = ['userRoles', 'userroles', 'user_roles', 'role_user', 'users_roles'];
-        foreach ($candidates as $candidate) {
-            if (Schema::hasTable($candidate)) {
-                $pivotTable = $candidate;
-                break;
-            }
-        }
-        if (!$pivotTable || !Schema::hasTable('roles'))
-            return false;
-
-        $userCol = null;
-        foreach (['userId', 'user_id', 'userid', 'userID'] as $c) {
-            if (Schema::hasColumn($pivotTable, $c)) {
-                $userCol = $c;
-                break;
-            }
-        }
-
-        $roleCol = null;
-        foreach (['roleId', 'role_id', 'roleid', 'roleID'] as $c) {
-            if (Schema::hasColumn($pivotTable, $c)) {
-                $roleCol = $c;
-                break;
-            }
-        }
-
-        if (!$userCol || !$roleCol)
-            return false;
-
-        $q = DB::table($pivotTable)
-            ->join('roles', 'roles.id', '=', $pivotTable . '.' . $roleCol)
-            ->where($pivotTable . '.' . $userCol, '=', $user->id)
-            ->whereRaw('LOWER(roles.name) = ?', [strtolower('Super Admin')]);
-
-        if (Schema::hasColumn('roles', 'isDeleted')) {
-            $q->where('roles.isDeleted', 0);
-        }
-        if (Schema::hasColumn('roles', 'deleted_at')) {
-            $q->whereNull('roles.deleted_at');
-        }
-
-        return $q->exists();
-    }
+    use HasPermissionTrait;
 
     private function saveFile($image_64)
     {
@@ -131,7 +80,7 @@ class BlogsController extends Controller
 
         $blog = $query->get();
 
-        $canDelete = $this->currentUserIsSuperAdmin();
+        $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
         foreach ($blog as $b) {
             $b->setAttribute('canDeleteComments', $canDelete);
             $b->setAttribute('can_delete_comments', $canDelete);
@@ -145,7 +94,7 @@ class BlogsController extends Controller
         $blog = Blogs::where('id', $id)->with('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user', 'tags')->withCount(['comments'])->first();
 
         if ($blog) {
-            $canDelete = $this->currentUserIsSuperAdmin();
+            $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
             $blog->setAttribute('canDeleteComments', $canDelete);
             $blog->setAttribute('can_delete_comments', $canDelete);
         }
@@ -298,16 +247,17 @@ class BlogsController extends Controller
 
     function deleteComment($commentId, Request $request)
     {
-        try {
-            $request->merge(['commentId' => $commentId]);
-            $request->validate([
-                'commentId' => 'required|uuid|exists:blog_comments,id'
-            ]);
+        $request->merge(['commentId' => $commentId]);
+        $request->validate([
+            'commentId' => 'required|uuid|exists:blog_comments,id'
+        ]);
 
-            if (!$this->currentUserIsSuperAdmin()) {
+        try {
+
+            if (!$this->hasPermission('BLOG_DELETE_COMMENT')) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Only Super Admin can delete comments.'
+                    'message' => 'You do not have permission to delete comments.'
                 ], 403);
             }
 

@@ -8,6 +8,7 @@ use App\Models\ArticleUsers;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\HasPermissionTrait;
 use App\Models\ArticleComments;
 use App\Models\ResponseAuditTrails;
 use Illuminate\Support\Facades\Auth;
@@ -17,62 +18,7 @@ use Illuminate\Support\Facades\Schema;
 
 class ArticlesController extends Controller
 {
-  /**
-   * True if authenticated user has role: roles.name = "Super Admin"
-   */
-  private function currentUserIsSuperAdmin(): bool
-  {
-    $user = Auth::user();
-    if (!$user)
-      return false;
-
-    // detect pivot table
-    $pivotTable = null;
-    $candidates = ['userRoles', 'userroles', 'user_roles', 'role_user', 'users_roles'];
-    foreach ($candidates as $candidate) {
-      if (Schema::hasTable($candidate)) {
-        $pivotTable = $candidate;
-        break;
-      }
-    }
-    if (!$pivotTable || !Schema::hasTable('roles'))
-      return false;
-
-    // detect columns
-    $userCol = null;
-    foreach (['userId', 'user_id', 'userid', 'userID'] as $c) {
-      if (Schema::hasColumn($pivotTable, $c)) {
-        $userCol = $c;
-        break;
-      }
-    }
-
-    $roleCol = null;
-    foreach (['roleId', 'role_id', 'roleid', 'roleID'] as $c) {
-      if (Schema::hasColumn($pivotTable, $c)) {
-        $roleCol = $c;
-        break;
-      }
-    }
-
-    if (!$userCol || !$roleCol)
-      return false;
-
-    $q = DB::table($pivotTable)
-      ->join('roles', 'roles.id', '=', $pivotTable . '.' . $roleCol)
-      ->where($pivotTable . '.' . $userCol, '=', $user->id)
-      ->whereRaw('LOWER(roles.name) = ?', [strtolower('Super Admin')]);
-
-    // consider active role rows if these columns exist
-    if (Schema::hasColumn('roles', 'isDeleted')) {
-      $q->where('roles.isDeleted', 0);
-    }
-    if (Schema::hasColumn('roles', 'deleted_at')) {
-      $q->whereNull('roles.deleted_at');
-    }
-
-    return $q->exists();
-  }
+  use HasPermissionTrait;
 
   private function saveFile($image_64)
   {
@@ -138,7 +84,7 @@ class ArticlesController extends Controller
 
     $articles = $query->get();
 
-    $canDelete = $this->currentUserIsSuperAdmin();
+    $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
     foreach ($articles as $a) {
       $a->setAttribute('canDeleteComments', $canDelete);
       $a->setAttribute('can_delete_comments', $canDelete);
@@ -189,7 +135,7 @@ class ArticlesController extends Controller
       ->first();
 
     if ($article) {
-      $canDelete = $this->currentUserIsSuperAdmin();
+      $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
       $article->setAttribute('canDeleteComments', $canDelete);
       $article->setAttribute('can_delete_comments', $canDelete);
     }
@@ -244,8 +190,12 @@ class ArticlesController extends Controller
 
   function addComment($id, Request $request)
   {
-    $article = Articles::where('id', $id)->first();
+    $article = Articles::findOrFail($id);
     $user = Auth::user();
+
+    $request->validate([
+      'comment' => 'required|string|max:1000'
+    ]);
 
     $comment = new ArticleComments();
     $comment->article_id = $article->id;
@@ -275,16 +225,16 @@ class ArticlesController extends Controller
 
   function deleteComment($commentId, Request $request)
   {
-    try {
-      $request->merge(['commentId' => $commentId]);
-      $request->validate([
-        'commentId' => 'required|uuid|exists:article_comments,id'
-      ]);
+    $request->merge(['commentId' => $commentId]);
+    $request->validate([
+      'commentId' => 'required|uuid|exists:article_comments,id'
+    ]);
 
-      if (!$this->currentUserIsSuperAdmin()) {
+    try {
+      if (!$this->hasPermission('ARTICLE_DELETE_COMMENT')) {
         return response()->json([
           'success' => false,
-          'message' => 'Only Super Admin can delete comments.'
+          'message' => 'You do not have permission to delete comments.'
         ], 403);
       }
 
