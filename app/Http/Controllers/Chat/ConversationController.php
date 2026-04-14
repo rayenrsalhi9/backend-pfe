@@ -395,8 +395,15 @@ class ConversationController extends Controller
                 ->with('conversation', 'conversation.users')
                 ->first();
 
-            // If conversation exists with same users, return existing conversation
-            if (!empty($conversationExist) && count($conversationExist['conversation']['users']) == count($users)) {
+            if (!empty($conversationExist)) {
+                $conversationId = $conversationExist['conversation_id'];
+                $actualParticipantCount = ConversationUser::where('conversation_id', $conversationId)->count();
+                if ($actualParticipantCount != $countUsers) {
+                    $conversationExist = null;
+                }
+            }
+
+            if (!empty($conversationExist)) {
                 $conver = Conversation::where('id', $conversationExist['conversation_id'])->with('users', 'lastMessage', 'lastMessage.sender')->first();
                 return response()->json($conver, 200);
             }

@@ -25,7 +25,6 @@ class ForumsController extends Controller
         $banner = $request->banner;
 
         $query = Forums::orderBy('created_at', 'DESC')
-            ->with('category', 'creator', 'reactions', 'comments', 'tags')
             ->withCount(['reactions', 'comments'])
             ->when($limit, function ($query) use ($limit) {
                 return $query->take($limit);
@@ -58,7 +57,6 @@ class ForumsController extends Controller
         $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
         foreach ($forums as $f) {
             $f->setAttribute('canDeleteComments', $canDelete);
-            $f->setAttribute('can_delete_comments', $canDelete);
         }
 
         return response()->json($forums, 200);
@@ -85,7 +83,6 @@ class ForumsController extends Controller
         if ($forum) {
             $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
             $forum->setAttribute('canDeleteComments', $canDelete);
-            $forum->setAttribute('can_delete_comments', $canDelete);
         }
 
         return response()->json($forum, 200);
@@ -95,6 +92,10 @@ class ForumsController extends Controller
     {
         $user = Auth::user();
         $tags = $request->tags;
+
+        if (!is_array($tags)) {
+            $tags = [];
+        }
 
         try {
             $forum = new Forums();
@@ -106,7 +107,7 @@ class ForumsController extends Controller
             $forum->closed = false;
             $forum->save();
 
-            if ($tags && count($tags) > 0) {
+            if (count($tags) > 0) {
                 foreach ($tags as $tag) {
                     $forumTag = new Tags();
                     $forumTag->forum_id = $forum->id;
@@ -127,6 +128,10 @@ class ForumsController extends Controller
     {
         $user = Auth::user();
         $tags = $request->tags;
+
+        if (!is_array($tags)) {
+            $tags = [];
+        }
 
         try {
             $forum = Forums::where('id', $id)->first();
@@ -303,22 +308,25 @@ class ForumsController extends Controller
 
     function deleteComment($commentId, Request $request)
     {
+        $user = Auth::user();
+
         try {
             $request->merge(['commentId' => $commentId]);
             $request->validate([
-                'commentId' => 'required|uuid|exists:forum_comments,id'
+                'commentId' => 'required|uuid'
             ]);
 
-            // ✅ Only users with FORUM_DELETE_COMMENT permission can delete comments
-            if (!$this->hasPermission('FORUM_DELETE_COMMENT')) {
+            $comment = ForumComments::find($commentId);
+
+            $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
+            $isOwner = $comment && $comment->user_id === $user->id;
+
+            if (!$canDelete && !$isOwner) {
                 return response()->json([
                     'success' => false,
                     'message' => 'You do not have permission to delete comments.'
                 ], 403);
             }
-
-            $user = Auth::user();
-            $comment = ForumComments::findOrFail($commentId);
 
             $forumId = $comment->forum_id;
             $commentContent = $comment->comment;

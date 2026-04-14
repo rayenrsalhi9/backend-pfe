@@ -17,7 +17,8 @@ class Pages extends Model
     protected static function booted()
     {
         static::addGlobalScope('notDeleted', function ($builder) {
-            $builder->where('isDeleted', 0);
+            $tableName = (new static)->getTable();
+            $builder->where($tableName . '.isDeleted', 0);
         });
     }
 

@@ -83,7 +83,6 @@ class BlogsController extends Controller
         $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
         foreach ($blog as $b) {
             $b->setAttribute('canDeleteComments', $canDelete);
-            $b->setAttribute('can_delete_comments', $canDelete);
         }
 
         return response()->json($blog, 200);
@@ -96,7 +95,6 @@ class BlogsController extends Controller
         if ($blog) {
             $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
             $blog->setAttribute('canDeleteComments', $canDelete);
-            $blog->setAttribute('can_delete_comments', $canDelete);
         }
 
         return response()->json($blog, 200);
@@ -247,22 +245,26 @@ class BlogsController extends Controller
 
     function deleteComment($commentId, Request $request)
     {
+        $user = Auth::user();
+
         $request->merge(['commentId' => $commentId]);
         $request->validate([
-            'commentId' => 'required|uuid|exists:blog_comments,id'
+            'commentId' => 'required|uuid'
         ]);
 
         try {
 
-            if (!$this->hasPermission('BLOG_DELETE_COMMENT')) {
+            $comment = BlogComments::find($commentId);
+
+            $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
+            $isOwner = $comment && $comment->user_id === $user->id;
+
+            if (!$canDelete && !$isOwner) {
                 return response()->json([
                     'success' => false,
                     'message' => 'You do not have permission to delete comments.'
                 ], 403);
             }
-
-            $user = Auth::user();
-            $comment = BlogComments::find($commentId);
 
             if (!$comment) {
                 return response()->json([

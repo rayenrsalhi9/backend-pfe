@@ -59,16 +59,21 @@ class ArticlesController extends Controller
         if ($user) {
           $query->orWhere(function ($query) use ($user) {
             $query->where('privacy', 'private')
-              ->whereHas('users', function ($query) use ($user) {
-                $query->where('user_id', $user->id);
+              ->where(function ($query) use ($user) {
+                $query->whereHas('users', function ($query) use ($user) {
+                  $query->where('user_id', $user->id);
+                });
+                $query->orWhere('created_by', $user->id);
               });
           });
         }
       });
 
     if ($request->name) {
-      $query->where('title', 'like', '%' . $request->name . '%')
-        ->orWhere('short_text',  'like', '%' . $request->name . '%');
+      $query->where(function ($query) use ($request) {
+        $query->where('title', 'like', '%' . $request->name . '%')
+          ->orWhere('short_text',  'like', '%' . $request->name . '%');
+      });
     }
 
     if ($request->articleCategoryId) {
@@ -87,7 +92,6 @@ class ArticlesController extends Controller
     $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
     foreach ($articles as $a) {
       $a->setAttribute('canDeleteComments', $canDelete);
-      $a->setAttribute('can_delete_comments', $canDelete);
     }
 
     return response()->json($articles, 200);
@@ -140,6 +144,9 @@ class ArticlesController extends Controller
     }
 
     if ($article->privacy === 'private') {
+      if (!$user) {
+        return response()->json(['success' => false, 'message' => 'Article not found'], 404);
+      }
       $isAssigned = $article->users()->where('user_id', $user->id)->exists();
       $isCreator = $article->created_by === $user->id;
 
@@ -150,7 +157,6 @@ class ArticlesController extends Controller
 
     $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
     $article->setAttribute('canDeleteComments', $canDelete);
-    $article->setAttribute('can_delete_comments', $canDelete);
 
     return response()->json($article, 200);
   }
@@ -205,6 +211,18 @@ class ArticlesController extends Controller
     $article = Articles::findOrFail($id);
     $user = Auth::user();
 
+    if ($article->privacy === 'private') {
+      if (!$user) {
+        return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+      }
+      $isAssigned = $article->users()->where('user_id', $user->id)->exists();
+      $isCreator = $article->created_by === $user->id;
+
+      if (!$isAssigned && !$isCreator) {
+        return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+      }
+    }
+
     $request->validate([
       'comment' => 'required|string|max:1000'
     ]);
@@ -237,19 +255,19 @@ class ArticlesController extends Controller
 
   function deleteComment($commentId, Request $request)
   {
+    if (!$this->hasPermission('ARTICLE_DELETE_COMMENT')) {
+      return response()->json([
+        'success' => false,
+        'message' => 'You do not have permission to delete comments.'
+      ], 403);
+    }
+
     $request->merge(['commentId' => $commentId]);
     $request->validate([
-      'commentId' => 'required|uuid|exists:article_comments,id'
+      'commentId' => 'required|uuid'
     ]);
 
     try {
-      if (!$this->hasPermission('ARTICLE_DELETE_COMMENT')) {
-        return response()->json([
-          'success' => false,
-          'message' => 'You do not have permission to delete comments.'
-        ], 403);
-      }
-
       $user = Auth::user();
       $comment = ArticleComments::find($commentId);
 

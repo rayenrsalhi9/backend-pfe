@@ -35,7 +35,7 @@ class LoginAuditRepository extends BaseRepository implements LoginAuditRepositor
         $orderBy = 'loginTime';
         $direction = 'asc';
 
-        if (isset($attributes->orderBy) && $attributes->orderBy) {
+        if (isset($attributes->orderBy) && is_string($attributes->orderBy) && $attributes->orderBy) {
             $orderByArray = explode(' ', $attributes->orderBy);
             $orderBy = $orderByArray[0];
             $direction = strtolower($orderByArray[1] ?? 'asc');
@@ -88,15 +88,27 @@ class LoginAuditRepository extends BaseRepository implements LoginAuditRepositor
             $query = $query->where('status', '=', $attributes->status);
         }
 
-        if (isset($attributes->loginTime) && $attributes->loginTime) {
+        if (isset($attributes->loginTime) && is_string($attributes->loginTime) && $attributes->loginTime) {
             try {
-                $parsed = Carbon::parse(str_replace('/', '-', $attributes->loginTime));
+                $loginTimeValue = str_replace('/', '-', $attributes->loginTime);
+                $parsed = null;
+
+                if (Carbon::hasFormatWithModifiers($loginTimeValue, 'Y-m-d')) {
+                    $parsed = Carbon::createFromFormat('Y-m-d', $loginTimeValue);
+                } elseif (Carbon::hasFormatWithModifiers($loginTimeValue, 'd-m-Y')) {
+                    $parsed = Carbon::createFromFormat('d-m-Y', $loginTimeValue);
+                }
+
+                if (!$parsed || !$parsed->isValid()) {
+                    throw new \Symfony\Component\HttpKernel\Exception\BadRequestHttpException('Invalid loginTime format. Please use a valid date format (e.g., YYYY-MM-DD or DD/MM/YYYY).');
+                }
+
                 $startDate = $parsed->copy()->startOfDay();
                 $endDate = $parsed->copy()->endOfDay();
 
                 $query = $query->where('loginTime', '>=', $startDate)
                     ->where('loginTime', '<=', $endDate);
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 throw new \Symfony\Component\HttpKernel\Exception\BadRequestHttpException('Invalid loginTime format. Please use a valid date format (e.g., YYYY-MM-DD or DD/MM/YYYY).');
             }
         }

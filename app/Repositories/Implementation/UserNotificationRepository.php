@@ -139,9 +139,21 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
 
         $query = UserNotifications::where('userId', $userId);
 
-        if (isset($options['excludeTypes']) && is_array($options['excludeTypes'])) {
-            $query->whereNotIn('type', $options['excludeTypes']);
+        if (isset($options['excludeTypes'])) {
+            $excludeTypes = $options['excludeTypes'];
+            if (is_string($excludeTypes)) {
+                $excludeTypes = array_map('trim', explode(',', $excludeTypes));
+            } elseif (!is_array($excludeTypes)) {
+                throw new RepositoryException('Invalid excludeTypes value. Must be an array or comma-separated string.');
+            }
+            if (!empty($excludeTypes)) {
+                $query->whereNotIn('type', $excludeTypes);
+            }
         }
+
+        $query->where(function($q) {
+            $q->whereNull('isRead')->orWhere('isRead', false);
+        });
 
         $query->update(['isRead' => true]);
 

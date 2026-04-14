@@ -185,15 +185,17 @@ class PermissionSeederV23 extends Seeder
         ];
 
 
-        $updatedPages = collect($pages)->map(function ($item, $key) {
-            $item['createdDate'] = Carbon::now();
-            $item['modifiedDate'] = Carbon::now();
+        $now = Carbon::now();
+
+        $updatedPages = collect($pages)->map(function ($item) use ($now) {
+            $item['createdDate'] = $now;
+            $item['modifiedDate'] = $now;
             return $item;
         });
 
-        $updatedActions = collect($actions)->map(function ($item, $key) {
-            $item['createdDate'] = Carbon::now();
-            $item['modifiedDate'] = Carbon::now();
+        $updatedActions = collect($actions)->map(function ($item) use ($now) {
+            $item['createdDate'] = $now;
+            $item['modifiedDate'] = $now;
             return $item;
         });
 
