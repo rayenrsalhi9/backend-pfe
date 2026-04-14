@@ -44,12 +44,14 @@ class AdditionalPermissionSeeder extends Seeder
                 $pageIds[$pd['name']] = $pageId;
             }
             else {
-                if ($pd['name'] === 'Blogs' && $page->order !== 16) {
-                    DB::table('pages')->where('id', $page->id)->update([
-                        'order' => 16,
-                        'modifiedBy' => $defaultUserId,
-                        'modifiedDate' => $now
-                    ]);
+                $updates = [
+                    'order' => $pd['order'],
+                    'modifiedBy' => $defaultUserId,
+                    'modifiedDate' => $now,
+                    'isDeleted' => 0
+                ];
+                if ($page->order != $pd['order'] || $page->isDeleted != 0) {
+                    DB::table('pages')->where('id', $page->id)->update($updates);
                 }
                 $pageIds[$pd['name']] = $page->id;
             }
@@ -103,13 +105,19 @@ class AdditionalPermissionSeeder extends Seeder
                 ]);
             }
             else {
-                DB::table('actions')
-                    ->where('id', $existingAction->id)
-                    ->update([
-                        'name' => $actionData['name'],
-                        'modifiedBy' => $defaultUserId,
-                        'modifiedDate' => $now
-                    ]);
+                $updates = [
+                    'name' => $actionData['name'],
+                    'order' => $actionData['order'],
+                    'pageId' => $pageIds[$actionData['page']],
+                    'modifiedBy' => $defaultUserId,
+                    'modifiedDate' => $now,
+                    'isDeleted' => 0
+                ];
+                if ($existingAction->name != $actionData['name'] || $existingAction->order != $actionData['order'] || $existingAction->isDeleted != 0) {
+                    DB::table('actions')
+                        ->where('id', $existingAction->id)
+                        ->update($updates);
+                }
 
                 $existingClaim = DB::table('roleClaims')
                     ->where('actionId', $existingAction->id)

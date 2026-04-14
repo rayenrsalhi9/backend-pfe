@@ -12,8 +12,15 @@ use App\Traits\Uuids;
 
 class Pages extends Model
 {
-    use HasFactory, SoftDeletes;
-    use Notifiable, Uuids;
+    use HasFactory, SoftDeletes, Notifiable, Uuids;
+
+    protected static function booted()
+    {
+        static::addGlobalScope('notDeleted', function ($builder) {
+            $builder->where('isDeleted', 0);
+        });
+    }
+
     protected $primaryKey = "id";
 
     const CREATED_AT = 'createdDate';

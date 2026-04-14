@@ -55,8 +55,18 @@ class ConversationController extends Controller
     {
         try {
             $user = Auth::user();
-            $perPage = min((int) $request->input('per_page', 20), 100);
+            if (!$user) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+
+            $perPage = (int) $request->input('per_page', 20);
             $page = max((int) $request->input('page', 1), 1);
+
+            if ($perPage < 1) {
+                $perPage = 1;
+            } elseif ($perPage > 100) {
+                $perPage = 100;
+            }
 
             $conversationIds = DB::table('conversation_users')
                 ->where('user_id', $user->id)
@@ -77,23 +87,16 @@ class ConversationController extends Controller
 
             $conversations = Conversation::whereIn('id', $conversationIds)
                 ->with(['lastMessage', 'lastMessage.sender', 'lastMessage.document', 'users'])
-                ->get()
-                ->sortByDesc(function ($conversation) {
-                    return $conversation->lastMessage ? $conversation->lastMessage->created_at : $conversation->created_at;
-                })
-                ->values();
-
-            $total = $conversations->count();
-            $offset = ($page - 1) * $perPage;
-            $paginated = $conversations->slice($offset, $perPage)->values();
+                ->orderByDesc('created_at')
+                ->paginate($perPage, ['*'], 'page', $page);
 
             return response()->json([
-                'data' => $paginated,
+                'data' => $conversations->items(),
                 'meta' => [
-                    'current_page' => $page,
-                    'per_page' => $perPage,
-                    'total' => $total,
-                    'last_page' => $total > 0 ? (int) ceil($total / $perPage) : 1
+                    'current_page' => $conversations->currentPage(),
+                    'per_page' => $conversations->perPage(),
+                    'total' => $conversations->total(),
+                    'last_page' => $conversations->lastPage()
                 ]
             ], 200);
         } catch (\Throwable $th) {
@@ -309,6 +312,12 @@ class ConversationController extends Controller
             return response()->json(['message' => 'user not found in conversation'], 404);
         }
 
+        $currentCount = ConversationUser::where('conversation_id', $request->conversationId)->count();
+
+        if ($currentCount <= 1) {
+            return response()->json(['message' => 'Cannot remove the last participant'], 400);
+        }
+
         $conversationUser->delete();
 
         return response()->json(['message' => 'user removed successfully'], 200);
@@ -376,9 +385,13 @@ class ConversationController extends Controller
             }
 
             // For 1-on-1 conversations (no new flag), check if conversation already exists
+            $countUsers = count($users);
+            $placeholders = implode(',', array_fill(0, $countUsers, '?'));
             $conversationExist = ConversationUser::whereIn('user_id', $users)
                 ->groupBy('conversation_id')
-                ->havingRaw('COUNT(DISTINCT user_id) = ' . count($users))
+                ->havingRaw("COUNT(DISTINCT user_id) = {$countUsers}")
+                ->havingRaw("SUM(CASE WHEN user_id IN ({$placeholders}) THEN 1 ELSE 0 END) = {$countUsers}")
+                ->setBindings(array_merge($users, $users))
                 ->with('conversation', 'conversation.users')
                 ->first();
 

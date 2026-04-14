@@ -14,79 +14,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class ForumsController extends Controller
 {
     use HasPermissionTrait;
-    /**
-     * True if authenticated user has role: roles.name = "Super Admin"
-     * Pivot table in your DB is: userRoles (NOT user_roles)
-     * We still auto-detect columns to be safe.
-     */
-    private function currentUserIsSuperAdmin(): bool
-    {
-        $user = Auth::user();
-        if (!$user)
-            return false;
-
-        // detect pivot table
-        $pivotTable = null;
-        $candidates = class_exists(\App\Models\UserRoles::class) 
-            ? [(new \App\Models\UserRoles())->getTable(), 'userroles', 'user_roles', 'role_user', 'users_roles']
-            : ['userRoles', 'userroles', 'user_roles', 'role_user', 'users_roles'];
-        foreach ($candidates as $candidate) {
-            if (Schema::hasTable($candidate)) {
-                $pivotTable = $candidate;
-                break;
-            }
-        }
-        if (!$pivotTable || !Schema::hasTable('roles'))
-            return false;
-
-        // detect columns
-        $userCol = null;
-        foreach (['userId', 'user_id', 'userid', 'userID'] as $c) {
-            if (Schema::hasColumn($pivotTable, $c)) {
-                $userCol = $c;
-                break;
-            }
-        }
-
-        $roleCol = null;
-        foreach (['roleId', 'role_id', 'roleid', 'roleID'] as $c) {
-            if (Schema::hasColumn($pivotTable, $c)) {
-                $roleCol = $c;
-                break;
-            }
-        }
-
-        if (!$userCol || !$roleCol)
-            return false;
-
-        $q = DB::table($pivotTable)
-            ->join('roles', 'roles.id', '=', $pivotTable . '.' . $roleCol)
-            ->where($pivotTable . '.' . $userCol, '=', $user->id)
-            ->whereRaw('LOWER(roles.name) = ?', [strtolower('Super Admin')]);
-
-        // consider active role rows if these columns exist
-        if (Schema::hasColumn('roles', 'isDeleted')) {
-            $q->where('roles.isDeleted', 0);
-        }
-        if (Schema::hasColumn('roles', 'deleted_at')) {
-            $q->whereNull('roles.deleted_at');
-        }
-
-        // consider active pivot rows if these columns exist
-        if (Schema::hasColumn($pivotTable, 'isDeleted')) {
-            $q->where($pivotTable . '.isDeleted', 0);
-        }
-        if (Schema::hasColumn($pivotTable, 'deleted_at')) {
-            $q->whereNull($pivotTable . '.deleted_at');
-        }
-
-        return $q->exists();
-    }
 
     function getAll(Request $request)
     {

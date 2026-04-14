@@ -262,7 +262,14 @@ class BlogsController extends Controller
             }
 
             $user = Auth::user();
-            $comment = BlogComments::findOrFail($commentId);
+            $comment = BlogComments::find($commentId);
+
+            if (!$comment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Comment not found'
+                ], 404);
+            }
 
             $blogId = $comment->blog_id;
             $commentContent = $comment->comment;

@@ -80,6 +80,14 @@ class CategoriesController extends Controller
     }
 
     $category = ArticleCategories::where('id',$id)->first();
+
+    if (!$category) {
+      return response()->json([
+        'success' => false,
+        'message' => 'Category not found'
+      ], 404);
+    }
+
     $category->delete();
 
     return response()->json('successfully deleted',200);

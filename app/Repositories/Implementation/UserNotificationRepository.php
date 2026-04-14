@@ -143,12 +143,7 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
             $query->whereNotIn('type', $options['excludeTypes']);
         }
 
-        $userNotifications = $query->get();
-
-        foreach ($userNotifications as $userNotification) {
-            $userNotification->isRead = true;
-            $userNotification->save();
-        }
+        $query->update(['isRead' => true]);
 
         return;
     }

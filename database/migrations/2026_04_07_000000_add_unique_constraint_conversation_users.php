@@ -9,6 +9,22 @@ return new class extends Migration
 {
     public function up()
     {
+        $duplicates = DB::table('conversation_users')
+            ->select('conversation_id', 'user_id', DB::raw('COUNT(*) as count'))
+            ->groupBy('conversation_id', 'user_id')
+            ->having('count', '>', 1)
+            ->get();
+
+        if ($duplicates->isNotEmpty()) {
+            $duplicatedPairs = $duplicates->map(function ($dup) {
+                return "({$dup->conversation_id}, {$dup->user_id})";
+            })->implode(', ');
+
+            throw new \RuntimeException(
+                "Cannot add unique constraint. Duplicate (conversation_id, user_id) pairs exist: {$duplicatedPairs}. Please remove duplicates before running this migration."
+            );
+        }
+
         Schema::table('conversation_users', function (Blueprint $table) {
             $table->unique(['conversation_id', 'user_id'], 'conversation_users_unique');
         });

@@ -10,9 +10,11 @@ use App\Repositories\Contracts\UserRepositoryInterface;
 use Illuminate\Support\Facades\Hash;
 use App\Models\Employe;
 use App\Models\Articles;
+use Carbon\Carbon;
 
 class UserController extends Controller
 {
+    use \App\Http\Controllers\Traits\HasPermissionTrait;
     private $userRepository;
 
     public function __construct(UserRepositoryInterface $userRepository)
@@ -32,6 +34,13 @@ class UserController extends Controller
 
     public function getUsersWithClaim(Request $request)
     {
+        if (!$this->hasPermission('USER_VIEW_USERS')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have permission to view users.'
+            ], 403);
+        }
+
         $claimType = $request->query('claim', 'CHAT_VIEW_CHATS');
         return response()->json($this->userRepository->getUsersWithClaim($claimType));
     }

@@ -197,9 +197,8 @@ class PermissionSeederV23 extends Seeder
             return $item;
         });
 
-        // Use upsert to handle existing records (no duplicate errors)
-        Pages::upsert($updatedPages->toArray(), ['id'], ['name', 'order', 'modifiedBy', 'modifiedDate']);
-        Actions::upsert($updatedActions->toArray(), ['id'], ['name', 'order', 'pageId', 'code', 'modifiedBy', 'modifiedDate']);
+        Pages::upsert($updatedPages->toArray(), ['id'], ['name', 'order', 'modifiedBy', 'modifiedDate', 'isDeleted']);
+        Actions::upsert($updatedActions->toArray(), ['id'], ['name', 'order', 'pageId', 'code', 'modifiedBy', 'modifiedDate', 'isDeleted']);
 
         $adminRoleId = 'f8b6ace9-a625-4397-bdf8-f34060dbd8e4';
         $newActionIds = [

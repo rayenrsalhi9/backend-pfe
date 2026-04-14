@@ -129,16 +129,28 @@ class ArticlesController extends Controller
 
   function getOne($id)
   {
+    $user = Auth::user();
     $article = Articles::where('id', $id)
       ->with('category', 'users', 'users.user', 'creator', 'comments', 'comments.user')
       ->withCount(['comments'])
       ->first();
 
-    if ($article) {
-      $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
-      $article->setAttribute('canDeleteComments', $canDelete);
-      $article->setAttribute('can_delete_comments', $canDelete);
+    if (!$article) {
+      return response()->json(['success' => false, 'message' => 'Article not found'], 404);
     }
+
+    if ($article->privacy === 'private') {
+      $isAssigned = $article->users()->where('user_id', $user->id)->exists();
+      $isCreator = $article->created_by === $user->id;
+
+      if (!$isAssigned && !$isCreator) {
+        return response()->json(['success' => false, 'message' => 'Article not found'], 404);
+      }
+    }
+
+    $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
+    $article->setAttribute('canDeleteComments', $canDelete);
+    $article->setAttribute('can_delete_comments', $canDelete);
 
     return response()->json($article, 200);
   }
@@ -239,7 +251,14 @@ class ArticlesController extends Controller
       }
 
       $user = Auth::user();
-      $comment = ArticleComments::findOrFail($commentId);
+      $comment = ArticleComments::find($commentId);
+
+      if (!$comment) {
+        return response()->json([
+          'success' => false,
+          'message' => 'Comment not found'
+        ], 404);
+      }
 
       $articleId = $comment->article_id;
       $commentContent = $comment->comment;

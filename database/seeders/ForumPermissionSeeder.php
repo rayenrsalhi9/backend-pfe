@@ -35,6 +35,14 @@ class ForumPermissionSeeder extends Seeder
                 'modifiedDate' => $now
             ]);
             $forumPage = (object) ['id' => $forumPageId];
+        } else {
+            DB::table('pages')->where('id', $forumPage->id)->update([
+                'order' => 13,
+                'isDeleted' => 0,
+                'modifiedBy' => $defaultUserId,
+                'modifiedDate' => $now
+            ]);
+            $forumPage->id = $forumPage->id;
         }
 
         $forumActions = [
@@ -76,21 +84,22 @@ class ForumPermissionSeeder extends Seeder
                     'claimValue' => null
                 ]);
             } else {
-                // Update name if it's different (optional, for consistency)
                 DB::table('actions')
                     ->where('id', $existingAction->id)
                     ->update([
                         'name' => $actionData['name'],
+                        'order' => $actionData['order'],
+                        'pageId' => $forumPage->id,
                         'modifiedBy' => $defaultUserId,
-                        'modifiedDate' => $now
+                        'modifiedDate' => $now,
+                        'isDeleted' => 0
                     ]);
-                
-                // Ensure it's assigned to Admin role
+
                 $existingClaim = DB::table('roleClaims')
                     ->where('actionId', $existingAction->id)
                     ->where('roleId', $adminRoleId)
                     ->first();
-                
+
                 if (!$existingClaim) {
                     DB::table('roleClaims')->insert([
                         'id' => Str::uuid(),

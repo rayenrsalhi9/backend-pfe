@@ -20,6 +20,8 @@ return new class extends Migration
             $table->longText('comment');
             $table->timestamps();
 
+            $table->index('article_id');
+            $table->index('user_id');
             $table->foreign('article_id')->references('id')->on('articles')->onDelete('cascade');
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
         });

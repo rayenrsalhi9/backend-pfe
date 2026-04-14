@@ -164,6 +164,14 @@ class SurverysController extends Controller
         }
 
         $survey = Surveys::where('id', $id)->first();
+
+        if (!$survey) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Survey not found'
+            ], 404);
+        }
+
         $survey->delete();
 
         return response()->json('successfully deleted', 200);

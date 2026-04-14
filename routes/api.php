@@ -98,7 +98,8 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
             return response($auth);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Pusher authorization failed: ' . $e->getMessage()], 500);
+            Log::error('Pusher authorization failed: ' . $e->getMessage());
+            return response()->json(['error' => 'Pusher authorization failed'], 500);
         }
     });
 
@@ -108,7 +109,8 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::get('/user-dropdown', [UserController::class, 'dropdown']);
 
-    Route::get('/user-with-claim', [UserController::class, 'getUsersWithClaim']);
+    Route::get('/user-with-claim', [UserController::class, 'getUsersWithClaim'])
+    ->middleware('hasToken:USER_VIEW_USERS');
 
     Route::middleware('hasToken:USER_CREATE_USER')->group(function () {
         Route::post('/user', [UserController::class, 'create']);

@@ -18,6 +18,7 @@ use App\Repositories\Contracts\UserNotificationRepositoryInterface;
 
 class DocumentController extends Controller
 {
+    use \App\Http\Controllers\Traits\HasPermissionTrait;
     private $documentRepository;
     private  $documentMetaDataRepository;
     private $documenTokenRepository;
@@ -187,14 +188,6 @@ class DocumentController extends Controller
      */
     private function userHasAdminClaim(): bool
     {
-        try {
-            $claims = Auth::parseToken()->getPayload()->get('claims');
-            if (!is_array($claims)) {
-                return false;
-            }
-            return in_array('ALL_DOCUMENTS_VIEW_DOCUMENTS', $claims);
-        } catch (\Exception $e) {
-            return false;
-        }
+        return $this->hasPermission('ALL_DOCUMENTS_VIEW_DOCUMENTS');
     }
 }

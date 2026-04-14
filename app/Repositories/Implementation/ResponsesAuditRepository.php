@@ -54,7 +54,15 @@ class ResponsesAuditRepository implements ResponsesAuditRepositoryInterface
         if (!empty($queryString->searchQuery)) {
             $searchTerm = '%' . $queryString->searchQuery . '%';
             $query->where(function ($q) use ($searchTerm) {
-                $q->where('responseContent', 'like', $searchTerm);
+                $q->where('responseContent', 'like', $searchTerm)
+                  ->orWhere('previousContent', 'like', $searchTerm)
+                  ->orWhere('ipAddress', 'like', $searchTerm)
+                  ->orWhereHas('forum', function ($sq) use ($searchTerm) {
+                      $sq->where('title', 'like', $searchTerm);
+                  })
+                  ->orWhereHas('user', function ($sq) use ($searchTerm) {
+                      $sq->where('name', 'like', $searchTerm);
+                  });
             });
         }
 
