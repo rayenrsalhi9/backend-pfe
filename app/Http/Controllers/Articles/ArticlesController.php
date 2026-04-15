@@ -8,10 +8,14 @@ use App\Models\ArticleUsers;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\HasPermissionTrait;
+use App\Models\ArticleComments;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class ArticlesController extends Controller
 {
+  use HasPermissionTrait;
 
   private function saveFile($image_64)
   {
@@ -39,28 +43,34 @@ class ArticlesController extends Controller
   function getAll(Request $request)
   {
 
-    
+    $user = Auth::user();
     $limit = $request->limit;
     $query = Articles::orderBy('created_at', 'DESC')
       ->with('category',  'creator')
+      ->withCount(['comments'])
       ->when($limit, function ($query) use ($limit) {
         return $query->take($limit);
       })
-      // ->where(function ($query) use ($user) {
-      //   $query->where('privacy', 'public')
-      //     ->orWhere(function ($query) use ($user) {
-      //       $query->where('privacy', 'private')
-      //         ->whereHas('users', function ($query) use ($user) {
-      //           $query->where('user_id', $user->id);
-      //         });
-      //     });
-      // })
-      ;
-
-    if ($request->name) {
-      $query->where('title', 'like', '%' . $request->name . '%')
-        ->orWhere('short_text',  'like', '%' . $request->name . '%');
-    }
+      ->where(function ($query) use ($user) {
+        $query->where('privacy', 'public');
+        if ($user) {
+          $query->orWhere(function ($query) use ($user) {
+            $query->where('privacy', 'private')
+              ->where(function ($query) use ($user) {
+                $query->whereHas('users', function ($query) use ($user) {
+                  $query->where('user_id', $user->id);
+                });
+                $query->orWhere('created_by', $user->id);
+              });
+          });
+        }
+      })
+      ->when($request->name, function ($query) use ($request) {
+        $query->where(function ($query) use ($request) {
+          $query->where('title', 'like', '%' . $request->name . '%')
+            ->orWhere('short_text', 'like', '%' . $request->name . '%');
+        });
+      });
 
     if ($request->articleCategoryId) {
       $query->where('article_category_id', $request->articleCategoryId);
@@ -74,6 +84,12 @@ class ArticlesController extends Controller
     }
 
     $articles = $query->get();
+
+    $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
+    foreach ($articles as $a) {
+      $a->setAttribute('canDeleteComments', $canDelete);
+    }
+
     return response()->json($articles, 200);
   }
 
@@ -113,8 +129,32 @@ class ArticlesController extends Controller
 
   function getOne($id)
   {
-    $articles = Articles::where('id', $id)->with('category', 'users', 'users.user', 'creator')->first();
-    return response()->json($articles, 200);
+    $user = Auth::user();
+    $article = Articles::where('id', $id)
+      ->with('category', 'users', 'users.user', 'creator', 'comments', 'comments.user')
+      ->withCount(['comments'])
+      ->first();
+
+    if (!$article) {
+      return response()->json(['success' => false, 'message' => 'Article not found'], 404);
+    }
+
+    if ($article->privacy === 'private') {
+      if (!$user) {
+        return response()->json(['success' => false, 'message' => 'Article not found'], 404);
+      }
+      $isAssigned = $article->users()->where('user_id', $user->id)->exists();
+      $isCreator = $article->created_by === $user->id;
+
+      if (!$isAssigned && !$isCreator) {
+        return response()->json(['success' => false, 'message' => 'Article not found'], 404);
+      }
+    }
+
+    $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
+    $article->setAttribute('canDeleteComments', $canDelete);
+
+    return response()->json($article, 200);
   }
 
   function update($id, Request $request)
@@ -160,5 +200,80 @@ class ArticlesController extends Controller
     $category->delete();
 
     return response()->json('successfully deleted', 200);
+  }
+
+  function addComment($id, Request $request)
+  {
+    $article = Articles::findOrFail($id);
+    $user = Auth::user();
+
+    if ($article->privacy === 'private') {
+      if (!$user) {
+        return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+      }
+      $isAssigned = $article->users()->where('user_id', $user->id)->exists();
+      $isCreator = $article->created_by === $user->id;
+
+      if (!$isAssigned && !$isCreator) {
+        return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+      }
+    }
+
+    $request->validate([
+      'comment' => 'required|string|max:1000'
+    ]);
+
+    $comment = new ArticleComments();
+    $comment->article_id = $article->id;
+    $comment->user_id = $user->id;
+    $comment->comment = $request->comment;
+    $comment->save();
+
+    $response = $article->load('category', 'creator', 'comments', 'comments.user');
+
+    return response()->json($response, 200);
+  }
+
+  function deleteComment($commentId, Request $request)
+  {
+    if (!$this->hasPermission('ARTICLE_DELETE_COMMENT')) {
+      return response()->json([
+        'success' => false,
+        'message' => 'You do not have permission to delete comments.'
+      ], 403);
+    }
+
+    $request->merge(['commentId' => $commentId]);
+    $request->validate([
+      'commentId' => 'required|uuid'
+    ]);
+
+    try {
+      $user = Auth::user();
+      $comment = ArticleComments::find($commentId);
+
+      if (!$comment) {
+        return response()->json([
+          'success' => false,
+          'message' => 'Comment not found'
+        ], 404);
+      }
+
+      $articleId = $comment->article_id;
+      $commentContent = $comment->comment;
+
+      $comment->delete();
+
+      return response()->json([
+        'success' => true,
+        'message' => 'Comment deleted successfully'
+      ], 200);
+    } catch (\Exception $e) {
+      Log::error('Comment deletion failed: ' . $e->getMessage());
+      return response()->json([
+        'success' => false,
+        'message' => 'Failed to delete comment'
+      ], 500);
+    }
   }
 }

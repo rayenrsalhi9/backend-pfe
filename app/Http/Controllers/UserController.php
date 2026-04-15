@@ -10,9 +10,11 @@ use App\Repositories\Contracts\UserRepositoryInterface;
 use Illuminate\Support\Facades\Hash;
 use App\Models\Employe;
 use App\Models\Articles;
+use Carbon\Carbon;
 
 class UserController extends Controller
 {
+    use \App\Http\Controllers\Traits\HasPermissionTrait;
     private $userRepository;
 
     public function __construct(UserRepositoryInterface $userRepository)
@@ -28,6 +30,19 @@ class UserController extends Controller
     public function dropdown()
     {
         return response()->json($this->userRepository->getUsersForDropdown());
+    }
+
+    public function getUsersWithClaim(Request $request)
+    {
+        if (!$this->hasPermission('USER_VIEW_USERS')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have permission to view users.'
+            ], 403);
+        }
+
+        $claimType = $request->query('claim', 'CHAT_VIEW_CHATS');
+        return response()->json($this->userRepository->getUsersWithClaim($claimType));
     }
 
     /**
@@ -72,13 +87,14 @@ class UserController extends Controller
     public function update(Request $request, $id)
     {
         $request->except(['password']);
-        $model = $this->userRepository->find($id);
+        $model = Users::findOrFail($id);
         $model->firstName = $request->firstName;
         $model->lastName = $request->lastName;
         $model->phoneNumber = $request->phoneNumber;
         $model->userName = $request->userName;
         $model->email = $request->email;
         $model->avatar = $request->avatar;
+        $model->direction = $request->direction;
 
         return  response()->json($this->userRepository->updateUser($model, $id, $request['roleIds']), 200);
     }
@@ -130,16 +146,12 @@ class UserController extends Controller
         return response()->json([], 200);
     }
    // Méthode pour récupérer la liste des employés
-   public function getEmployes()
-   {
-       $employes = Employe::all();
+    public function getEmployes()
+    {
+        $employes = Employe::all();
 
-       if ($employes->isEmpty()) {
-           return response()->json(['message' => 'Aucun employé trouvé'], 404);
-       }
-
-       return response()->json($employes);
-   }
+        return response()->json($employes);
+    }
 
    
     public function getAllPublic(Request $request)

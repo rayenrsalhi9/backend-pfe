@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Forums;
 use Illuminate\Http\Request;
 use App\Models\ForumCategories;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\HasPermissionTrait;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 
 class ForumCategoriesController extends Controller
 {
+    use HasPermissionTrait;
     function getAll()
     {
         $categories = ForumCategories::orderBy('created_at', 'DESC')->get();
@@ -70,7 +72,22 @@ class ForumCategoriesController extends Controller
 
     function delete($id)
     {
+        if (!$this->hasPermission('FORUM_DELETE_CATEGORY')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have permission to delete this category.'
+            ], 403);
+        }
+
         $category = ForumCategories::where('id', $id)->first();
+
+        if (!$category) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Category not found'
+            ], 404);
+        }
+
         $category->delete();
 
         return response()->json('successfully deleted', 200);

@@ -63,7 +63,7 @@ class PermissionSeederV23 extends Seeder
             [
                 'id' => '6309ca1c-5dcc-4cd6-a39d-be158ee28638',
                 'name' => 'Edit Chat',
-                'order' =>  3,
+                'order' => 3,
                 'pageId' => 'a5597558-30ad-4717-abce-1da887b61b0c',
                 'code' => 'CHAT_EDIT_CHAT',
                 'createdBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
@@ -171,23 +171,51 @@ class PermissionSeederV23 extends Seeder
                 'createdBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
                 'modifiedBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
                 'isDeleted' => 0
+            ],
+            [
+                'id' => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+                'name' => 'Delete Article Comments',
+                'order' => 9,
+                'pageId' => '3b9d99e1-d17b-4ab9-92f1-ff1089182da6',
+                'code' => 'ARTICLE_DELETE_COMMENT',
+                'createdBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                'modifiedBy' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
+                'isDeleted' => 0
             ]
         ];
 
 
-        $updatedPages =  collect($pages)->map(function ($item, $key) {
-            $item['createdDate'] = Carbon::now();
-            $item['modifiedDate'] = Carbon::now();
+        $now = Carbon::now();
+
+        $updatedPages = collect($pages)->map(function ($item) use ($now) {
+            $item['createdDate'] = $now;
+            $item['modifiedDate'] = $now;
             return $item;
         });
 
-        $updatedActions =  collect($actions)->map(function ($item, $key) {
-            $item['createdDate'] = Carbon::now();
-            $item['modifiedDate'] = Carbon::now();
+        $updatedActions = collect($actions)->map(function ($item) use ($now) {
+            $item['createdDate'] = $now;
+            $item['modifiedDate'] = $now;
             return $item;
         });
 
-        Pages::insert($updatedPages->toArray());
-        Actions::insert($updatedActions->toArray());
+        Pages::upsert($updatedPages->toArray(), ['id'], ['name', 'order', 'modifiedBy', 'modifiedDate', 'isDeleted']);
+        Actions::upsert($updatedActions->toArray(), ['id'], ['name', 'order', 'pageId', 'code', 'modifiedBy', 'modifiedDate', 'isDeleted']);
+
+        $adminRoleId = 'f8b6ace9-a625-4397-bdf8-f34060dbd8e4';
+        $newActionIds = [
+            'a1b2c3d4-e5f6-7890-abcd-ef1234567890', // ARTICLE_DELETE_COMMENT
+        ];
+
+        foreach ($newActionIds as $actionId) {
+            RoleClaims::firstOrCreate([
+                'actionId' => $actionId,
+                'roleId' => $adminRoleId,
+            ], [
+                'id' => Str::uuid(),
+                'claimType' => 'ARTICLE_DELETE_COMMENT',
+                'claimValue' => null,
+            ]);
+        }
     }
 }

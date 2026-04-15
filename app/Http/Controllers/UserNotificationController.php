@@ -33,8 +33,8 @@ class UserNotificationController extends Controller
         return  response()->json($this->userNotificationRepository->markAsRead($request), 200);
     }
 
-    public function markAllAsRead()
+    public function markAllAsRead(Request $request)
     {
-        return  response()->json($this->userNotificationRepository->markAllAsRead(), 200);
+        return  response()->json($this->userNotificationRepository->markAllAsRead($request->only(['excludeTypes'])), 200);
     }
 }

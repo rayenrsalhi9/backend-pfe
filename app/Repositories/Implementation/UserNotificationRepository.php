@@ -130,19 +130,42 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
         return $result;
     }
 
-    public function markAllAsRead()
+    public function markAllAsRead($options = [])
     {
         $userId = Auth::parseToken()->getPayload()->get('userId');
         if ($userId == null) {
             throw new RepositoryException('User does not exist.');
         }
 
-        $userNotifications = UserNotifications::where('userId', $userId)->get();
+        $query = UserNotifications::where('userId', $userId);
 
-        foreach ($userNotifications as $userNotification) {
-            $userNotification->isRead = true;
-            $userNotification->save();
+        if (array_key_exists('excludeTypes', $options)) {
+            $excludeTypes = $options['excludeTypes'];
+            if (is_string($excludeTypes)) {
+                $excludeTypes = array_map('trim', explode(',', $excludeTypes));
+            } elseif (is_array($excludeTypes)) {
+                $excludeTypes = array_map('trim', $excludeTypes);
+            }
+            if (!is_array($excludeTypes)) {
+                throw new RepositoryException('Invalid excludeTypes value. Must be an array or comma-separated string.');
+            }
+            $excludeTypes = array_filter($excludeTypes, function ($v) {
+                return $v !== null && $v !== '';
+            });
+            $excludeTypes = array_values($excludeTypes);
+            if (!empty($excludeTypes) && count(array_filter($excludeTypes, 'is_string')) !== count($excludeTypes)) {
+                throw new RepositoryException('Invalid excludeTypes value. All values must be strings.');
+            }
+            if (!empty($excludeTypes)) {
+                $query->whereNotIn('type', $excludeTypes);
+            }
         }
+
+        $query->where(function($q) {
+            $q->whereNull('isRead')->orWhere('isRead', false);
+        });
+
+        $query->update(['isRead' => true]);
 
         return;
     }

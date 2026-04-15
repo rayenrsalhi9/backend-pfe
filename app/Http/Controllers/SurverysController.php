@@ -8,9 +8,11 @@ use Illuminate\Http\Request;
 use App\Models\SurveyAnswers;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\Traits\HasPermissionTrait;
 
 class SurverysController extends Controller
 {
+    use HasPermissionTrait;
     function getAll(Request $request)
     {
         $user = Auth::user();
@@ -154,7 +156,22 @@ class SurverysController extends Controller
 
     function delete($id)
     {
+        if (!$this->hasPermission('SURVEY_DELETE_SURVEY')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have permission to delete surveys.'
+            ], 403);
+        }
+
         $survey = Surveys::where('id', $id)->first();
+
+        if (!$survey) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Survey not found'
+            ], 404);
+        }
+
         $survey->delete();
 
         return response()->json('successfully deleted', 200);

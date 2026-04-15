@@ -8,13 +8,17 @@ use App\Models\ArticleUsers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\HasPermissionTrait;
 use App\Models\BlogComments;
 use App\Models\BlogReactions;
 use App\Models\Tags;
+use App\Models\ResponseAuditTrails;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class BlogsController extends Controller
 {
+    use HasPermissionTrait;
 
     private function saveFile($image_64)
     {
@@ -48,6 +52,7 @@ class BlogsController extends Controller
 
         $query = Blogs::orderBy('created_at', 'DESC')
             ->with('category', 'creator', 'tags')
+            ->withCount(['comments', 'reactions', 'reactionsUp', 'reactionsDown'])
             ->when($limit, function ($query) use ($limit) {
                 return $query->take($limit);
             })
@@ -72,12 +77,24 @@ class BlogsController extends Controller
         }
 
         $blog = $query->get();
+
+        $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
+        foreach ($blog as $b) {
+            $b->setAttribute('canDeleteComments', $canDelete);
+        }
+
         return response()->json($blog, 200);
     }
 
     function getOne($id)
     {
-        $blog = Blogs::where('id', $id)->with('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user', 'tags')->first();
+        $blog = Blogs::where('id', $id)->with('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user', 'tags')->withCount(['comments'])->first();
+
+        if ($blog) {
+            $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
+            $blog->setAttribute('canDeleteComments', $canDelete);
+        }
+
         return response()->json($blog, 200);
     }
 
@@ -222,5 +239,69 @@ class BlogsController extends Controller
         $response = $blog->load('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user');
 
         return response()->json($response, 200);
+    }
+
+    function deleteComment($commentId, Request $request)
+    {
+        $user = Auth::user();
+
+        $request->merge(['commentId' => $commentId]);
+        $request->validate([
+            'commentId' => 'required|uuid'
+        ]);
+
+        try {
+
+            $comment = BlogComments::find($commentId);
+
+            $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
+            $isOwner = $comment && $comment->user_id === $user->id;
+
+            if (!$canDelete && !$isOwner) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to delete comments.'
+                ], 403);
+            }
+
+            if (!$comment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Comment not found'
+                ], 404);
+            }
+
+            $blogId = $comment->blog_id;
+            $commentContent = $comment->comment;
+
+            $comment->delete();
+
+            // audit trail
+            try {
+                $audit = new ResponseAuditTrails();
+                $audit->blogId = $blogId;
+                $audit->responseId = $commentId;
+                $audit->responseType = 'comment';
+                $audit->operationName = 'Deleted';
+                $audit->responseContent = $commentContent;
+                $audit->ipAddress = $request->ip();
+                $audit->userAgent = $request->userAgent();
+                $audit->createdBy = $user->id;
+                $audit->save();
+            } catch (\Throwable $th) {
+                Log::error('Audit trail creation failed: ' . $th->getMessage());
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Comment deleted successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Comment deletion failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete comment'
+            ], 500);
+        }
     }
 }

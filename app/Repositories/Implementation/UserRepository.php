@@ -61,7 +61,7 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
 
     public function getUsersForDropdown()
     {
-        $users = Users::select(['id', 'firstName', 'lastName', 'userName', 'email'])->get();
+        $users = Users::select(['id', 'firstName', 'lastName', 'userName', 'email', 'avatar'])->get();
         return $users;
     }
 
@@ -147,11 +147,31 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
             $model->avatar = $logo;
             $model->phoneNumber = $request->phoneNumber;
             $model->save();
-            return [];
+            
+            return [
+                'id' => $model->id,
+                'firstName' => $model->firstName,
+                'lastName' => $model->lastName,
+                'avatar' => $model->avatar,
+                'phoneNumber' => $model->phoneNumber,
+            ];
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Error in saving data.',
             ], 409);
         }
+    }
+
+    public function getUsersWithClaim($claimType)
+    {
+        $currentUserId = Auth::id();
+
+        return Users::select(['id', 'email', 'firstName', 'lastName', 'isDeleted'])
+        ->whereHas('userRoles.role.roleClaims', function ($query) use ($claimType) {
+            $query->where('claimType', $claimType);
+        })
+        ->where('isDeleted', 0)
+        ->where('id', '!=', $currentUserId)
+        ->get();
     }
 }
