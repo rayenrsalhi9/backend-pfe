@@ -10,7 +10,6 @@ use Carbon\Carbon;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\HasPermissionTrait;
 use App\Models\ArticleComments;
-use App\Models\ResponseAuditTrails;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
@@ -230,21 +229,6 @@ class ArticlesController extends Controller
     $comment->comment = $request->comment;
     $comment->save();
 
-    // audit trail
-    try {
-      $audit = new ResponseAuditTrails();
-      $audit->articleId = $article->id;
-      $audit->responseId = $comment->id;
-      $audit->responseType = 'comment';
-      $audit->operationName = 'Created';
-      $audit->responseContent = $request->comment;
-      $audit->ipAddress = $request->ip();
-      $audit->userAgent = $request->userAgent();
-      $audit->save();
-    } catch (\Throwable $th) {
-      Log::error($th->getMessage());
-    }
-
     $response = $article->load('category', 'creator', 'comments', 'comments.user');
 
     return response()->json($response, 200);
@@ -279,22 +263,6 @@ class ArticlesController extends Controller
       $commentContent = $comment->comment;
 
       $comment->delete();
-
-      // audit trail
-      try {
-        $audit = new ResponseAuditTrails();
-        $audit->articleId = $articleId;
-        $audit->responseId = $commentId;
-        $audit->responseType = 'comment';
-        $audit->operationName = 'Deleted';
-        $audit->responseContent = $commentContent;
-        $audit->ipAddress = $request->ip();
-        $audit->userAgent = $request->userAgent();
-        $audit->createdBy = $user->id;
-        $audit->save();
-      } catch (\Throwable $th) {
-        Log::error('Audit trail creation failed: ' . $th->getMessage());
-      }
 
       return response()->json([
         'success' => true,

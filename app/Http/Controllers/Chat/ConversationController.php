@@ -110,6 +110,11 @@ class ConversationController extends Controller
     function conversationMessages($id)
     {
         try {
+            $isParticipant = ConversationUser::where('conversation_id', $id)
+                ->where('user_id', auth()->id())->exists();
+            if (!$isParticipant) {
+                return response()->json(['error' => 'Conversation not found'], 404);
+            }
 
             $conversations = Conversation::where('id', $id)->with(['messages', 'messages.sender', 'messages.document', 'users', 'messages.reactions'])->first();
 
@@ -123,6 +128,11 @@ class ConversationController extends Controller
     function conversationUsers($id)
     {
         try {
+            $isParticipant = ConversationUser::where('conversation_id', $id)
+                ->where('user_id', auth()->id())->exists();
+            if (!$isParticipant) {
+                return response()->json(['error' => 'Conversation not found'], 404);
+            }
 
             $conversations = Conversation::where('id', $id)->with('users')->get();
 
@@ -284,19 +294,21 @@ class ConversationController extends Controller
         if ($conversationUser)
             return response()->json(['message' => 'user already exist'], 409);
 
-        if ($request->has('title') && $request->title !== null && $request->title !== '') {
-            $conversation->title = $request->title;
-            $conversation->save();
-        }
+        $cuser = DB::transaction(function () use ($conversation, $request) {
+            if ($request->has('title') && $request->title !== null && $request->title !== '') {
+                $conversation->title = $request->title;
+                $conversation->save();
+            }
 
-        if (!$conversationUser) {
-            $cuser = new ConversationUser();
-            $cuser->user_id = $request->selectedUser['id'];
-            $cuser->conversation_id = $request->conversationId;
-            $cuser->save();
+            $cuser = ConversationUser::firstOrCreate([
+                'conversation_id' => $request->conversationId,
+                'user_id' => $request->selectedUser['id']
+            ]);
 
             $conversation->touch();
-        }
+
+            return $cuser;
+        });
 
         $cuser->load('conversation', 'conversation.users', 'conversation.lastMessage', 'conversation.lastMessage.sender', 'conversation.lastMessage.document');
 
@@ -389,7 +401,7 @@ class ConversationController extends Controller
                 return response()->json(['error' => 'Invalid or empty users list'], 400);
             }
 
-            $forceNew = isset($request->new) && $request->new == true;
+            $forceNew = $request->boolean('new');
 
             // For groups (new=true flag set), always create new conversation with title
             if ($forceNew) {
@@ -414,7 +426,8 @@ class ConversationController extends Controller
             $countUsers = count($users);
             $placeholders = implode(',', array_fill(0, $countUsers, '?'));
 
-            $conversationExist = ConversationUser::groupBy('conversation_id')
+            $conversationExist = ConversationUser::select('conversation_id')
+                ->groupBy('conversation_id')
                 ->havingRaw("COUNT(DISTINCT CASE WHEN user_id IN ({$placeholders}) THEN user_id END) = ?", array_merge($users, [$countUsers]))
                 ->havingRaw("COUNT(DISTINCT user_id) = ?", [$countUsers])
                 ->first();

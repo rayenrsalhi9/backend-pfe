@@ -143,6 +143,8 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
             $excludeTypes = $options['excludeTypes'];
             if (is_string($excludeTypes)) {
                 $excludeTypes = array_map('trim', explode(',', $excludeTypes));
+            } elseif (is_array($excludeTypes)) {
+                $excludeTypes = array_map('trim', $excludeTypes);
             }
             if (!is_array($excludeTypes)) {
                 throw new RepositoryException('Invalid excludeTypes value. Must be an array or comma-separated string.');
