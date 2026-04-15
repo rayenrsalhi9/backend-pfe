@@ -12,9 +12,7 @@ use App\Http\Controllers\Traits\HasPermissionTrait;
 use App\Models\ArticleComments;
 use App\Models\ResponseAuditTrails;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
 
 class ArticlesController extends Controller
 {
@@ -67,14 +65,13 @@ class ArticlesController extends Controller
               });
           });
         }
+      })
+      ->when($request->name, function ($query) use ($request) {
+        $query->where(function ($query) use ($request) {
+          $query->where('title', 'like', '%' . $request->name . '%')
+            ->orWhere('short_text', 'like', '%' . $request->name . '%');
+        });
       });
-
-    if ($request->name) {
-      $query->where(function ($query) use ($request) {
-        $query->where('title', 'like', '%' . $request->name . '%')
-          ->orWhere('short_text',  'like', '%' . $request->name . '%');
-      });
-    }
 
     if ($request->articleCategoryId) {
       $query->where('article_category_id', $request->articleCategoryId);

@@ -5,6 +5,7 @@ use App\Models\Conversation;
 use Illuminate\Http\Request;
 use App\Events\ConversationEvent;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\RoleController;
@@ -97,8 +98,8 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
             $auth = $pusher->authorizeChannel($channelName, $socketId, $channelData);
 
             return response($auth);
-        } catch (\Exception $e) {
-            Log::error('Pusher authorization failed: ' . $e->getMessage());
+        } catch (\Throwable $th) {
+            Log::error('Pusher authorization failed: ' . $th->getMessage());
             return response()->json(['error' => 'Pusher authorization failed'], 500);
         }
     });

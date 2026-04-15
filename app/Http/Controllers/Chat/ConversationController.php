@@ -87,6 +87,8 @@ class ConversationController extends Controller
 
             $conversations = Conversation::whereIn('id', $conversationIds)
                 ->with(['lastMessage', 'lastMessage.sender', 'lastMessage.document', 'users'])
+                ->withMax('messages', 'created_at')
+                ->orderByDesc('messages_max_created_at')
                 ->orderByDesc('created_at')
                 ->paginate($perPage, ['*'], 'page', $page);
 
@@ -100,7 +102,8 @@ class ConversationController extends Controller
                 ]
             ], 200);
         } catch (\Throwable $th) {
-            return response()->json(['error' => 'Failed to load conversations: ' . $th->getMessage()], 500);
+            \Illuminate\Support\Facades\Log::error($th);
+            return response()->json(['error' => 'Failed to load conversations'], 500);
         }
     }
 
@@ -112,8 +115,8 @@ class ConversationController extends Controller
 
             return response()->json($conversations, 200);
         } catch (\Throwable $th) {
-
-            return response()->json($th->getMessage(), 500);
+            \Illuminate\Support\Facades\Log::error($th);
+            return response()->json(['error' => 'Failed to retrieve messages'], 500);
         }
     }
 
@@ -125,8 +128,8 @@ class ConversationController extends Controller
 
             return response()->json($conversations, 200);
         } catch (\Throwable $th) {
-
-            return response()->json($th->getMessage(), 500);
+            \Illuminate\Support\Facades\Log::error($th);
+            return response()->json(['error' => 'Failed to retrieve conversation users'], 500);
         }
     }
 
@@ -152,7 +155,15 @@ class ConversationController extends Controller
             $conversationMessage = new ConversationMessage();
             $conversationMessage->conversation_id = $conversation->id;
             $conversationMessage->sender_id = $user->id;
-            $conversationMessage->content = $request->type != "msg" ? $this->saveFile($request->input('content')) : $request->input('content');
+            if ($request->type != "msg") {
+                $filePath = $this->saveFile($request->input('content'));
+                if (empty($filePath)) {
+                    return response()->json(['error' => 'Failed to save file'], 400);
+                }
+                $conversationMessage->content = $filePath;
+            } else {
+                $conversationMessage->content = $request->input('content');
+            }
             $conversationMessage->document_id = null;
             $conversationMessage->is_read = null;
             $conversationMessage->type = $request->type;
@@ -186,7 +197,8 @@ class ConversationController extends Controller
 
             return response()->json($message, 200);
         } catch (\Throwable $th) {
-            return response()->json($th->getMessage(), 500);
+            \Illuminate\Support\Facades\Log::error($th);
+            return response()->json(['error' => 'Failed to send message'], 500);
         }
     }
 
@@ -240,7 +252,8 @@ class ConversationController extends Controller
 
             return response($data, 200);
         } catch (\Throwable $th) {
-            return response()->json($th->getMessage(), 200);
+            \Illuminate\Support\Facades\Log::error($th);
+            return response()->json(['error' => 'Failed to add reaction'], 500);
         }
     }
 
@@ -263,11 +276,6 @@ class ConversationController extends Controller
             return response()->json(['message' => 'unauthorized - not a participant in this conversation'], 403);
         }
 
-        if ($request->has('title') && $request->title !== null && $request->title !== '') {
-            $conversation->title = $request->title;
-            $conversation->save();
-        }
-
         $conversationUser = ConversationUser::where([
             'conversation_id' => $request->conversationId,
             'user_id' => $request->selectedUser['id']
@@ -275,6 +283,11 @@ class ConversationController extends Controller
 
         if ($conversationUser)
             return response()->json(['message' => 'user already exist'], 409);
+
+        if ($request->has('title') && $request->title !== null && $request->title !== '') {
+            $conversation->title = $request->title;
+            $conversation->save();
+        }
 
         if (!$conversationUser) {
             $cuser = new ConversationUser();
@@ -312,15 +325,19 @@ class ConversationController extends Controller
             return response()->json(['message' => 'user not found in conversation'], 404);
         }
 
-        $currentCount = ConversationUser::where('conversation_id', $request->conversationId)->count();
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $conversationUser) {
+            $currentCount = ConversationUser::where('conversation_id', $request->conversationId)
+                ->lockForUpdate()
+                ->count();
 
-        if ($currentCount <= 1) {
-            return response()->json(['message' => 'Cannot remove the last participant'], 400);
-        }
+            if ($currentCount <= 1) {
+                return response()->json(['message' => 'Cannot remove the last participant'], 400);
+            }
 
-        $conversationUser->delete();
+            $conversationUser->delete();
 
-        return response()->json(['message' => 'user removed successfully'], 200);
+            return response()->json(['message' => 'user removed successfully'], 200);
+        });
     }
 
     function conversationGroup(Request $request)
@@ -355,48 +372,55 @@ class ConversationController extends Controller
 
             return response()->json($conversation->fresh(['users', 'lastMessage']), 200);
         } catch (\Throwable $th) {
-            return response()->json(['message' => $th->getMessage()], 500);
+            \Illuminate\Support\Facades\Log::error($th);
+            return response()->json(['message' => 'Failed to update conversation'], 500);
         }
     }
 
     function conversationCreate(Request $request)
     {
         try {
-            $users = (array) $request->users;
-            // If new=true is set, always create a new conversation with the provided title (group chat)
+            $rawUsers = (array) $request->users;
+            $users = array_unique(array_filter($rawUsers, function ($v) {
+                return !empty($v) && (is_numeric($v) || (is_string($v) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $v)));
+            }));
+
+            if (empty($users)) {
+                return response()->json(['error' => 'Invalid or empty users list'], 400);
+            }
+
             $forceNew = isset($request->new) && $request->new == true;
 
             // For groups (new=true flag set), always create new conversation with title
             if ($forceNew) {
-                $newConversation = new Conversation();
-                // Save title if provided, otherwise save null
-                $newConversation->title = $request->title && trim($request->title) ? $request->title : null;
-                $newConversation->save();
+                return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $users) {
+                    $newConversation = new Conversation();
+                    $newConversation->title = $request->title && trim($request->title) ? $request->title : null;
+                    $newConversation->save();
 
-                foreach ($users as $user) {
-                    $cuser = new ConversationUser();
-                    $cuser->user_id = $user;
-                    $cuser->conversation_id = $newConversation->id;
-                    $cuser->save();
-                }
-                $conversation = $newConversation->load('users', 'lastMessage');
+                    foreach ($users as $userId) {
+                        $cuser = new ConversationUser();
+                        $cuser->user_id = $userId;
+                        $cuser->conversation_id = $newConversation->id;
+                        $cuser->save();
+                    }
+                    $conversation = $newConversation->load('users', 'lastMessage');
 
-                return response()->json($conversation, 200);
+                    return response()->json($conversation, 200);
+                });
             }
 
             // For 1-on-1 conversations (no new flag), check if conversation already exists
             $countUsers = count($users);
             $placeholders = implode(',', array_fill(0, $countUsers, '?'));
-            $conversationExist = ConversationUser::whereIn('user_id', $users)
-                ->groupBy('conversation_id')
-                ->havingRaw("COUNT(DISTINCT user_id) = {$countUsers}")
-                ->havingRaw("SUM(CASE WHEN user_id IN ({$placeholders}) THEN 1 ELSE 0 END) = {$countUsers}")
-                ->setBindings(array_merge($users, $users))
-                ->with('conversation', 'conversation.users')
+
+            $conversationExist = ConversationUser::groupBy('conversation_id')
+                ->havingRaw("COUNT(DISTINCT CASE WHEN user_id IN ({$placeholders}) THEN user_id END) = ?", array_merge($users, [$countUsers]))
+                ->havingRaw("COUNT(DISTINCT user_id) = ?", [$countUsers])
                 ->first();
 
-            if (!empty($conversationExist)) {
-                $conversationId = $conversationExist['conversation_id'];
+            if ($conversationExist) {
+                $conversationId = $conversationExist->conversation_id;
                 $actualParticipantCount = ConversationUser::where('conversation_id', $conversationId)->count();
                 if ($actualParticipantCount != $countUsers) {
                     $conversationExist = null;
@@ -404,26 +428,29 @@ class ConversationController extends Controller
             }
 
             if (!empty($conversationExist)) {
-                $conver = Conversation::where('id', $conversationExist['conversation_id'])->with('users', 'lastMessage', 'lastMessage.sender')->first();
+                $conver = Conversation::where('id', $conversationExist->conversation_id)->with('users', 'lastMessage', 'lastMessage.sender')->first();
                 return response()->json($conver, 200);
             }
 
             // Create new conversation
-            $newConversation = new Conversation();
-            $newConversation->title = null; // No title for 1-on-1 conversations
-            $newConversation->save();
+            return \Illuminate\Support\Facades\DB::transaction(function () use ($users) {
+                $newConversation = new Conversation();
+                $newConversation->title = null;
+                $newConversation->save();
 
-            foreach ($users as $user) {
-                $cuser = new ConversationUser();
-                $cuser->user_id = $user;
-                $cuser->conversation_id = $newConversation->id;
-                $cuser->save();
-            }
-            $conversation = $newConversation->load('users', 'lastMessage', 'lastMessage.sender');
+                foreach ($users as $userId) {
+                    $cuser = new ConversationUser();
+                    $cuser->user_id = $userId;
+                    $cuser->conversation_id = $newConversation->id;
+                    $cuser->save();
+                }
+                $conversation = $newConversation->load('users', 'lastMessage', 'lastMessage.sender');
 
-            return response()->json($conversation, 200);
+                return response()->json($conversation, 200);
+            });
         } catch (\Throwable $th) {
-            return response()->json(['message' => $th->getMessage()], 500);
+            \Illuminate\Support\Facades\Log::error($th);
+            return response()->json(['message' => 'Failed to create conversation'], 500);
         }
     }
 
@@ -451,8 +478,8 @@ class ConversationController extends Controller
 
             return response()->json('conversation deleted', 200);
         } catch (\Throwable $th) {
-
-            return response()->json($th->getMessage(), 500);
+            \Illuminate\Support\Facades\Log::error($th);
+            return response()->json(['message' => 'Failed to delete conversation'], 500);
         }
     }
 }

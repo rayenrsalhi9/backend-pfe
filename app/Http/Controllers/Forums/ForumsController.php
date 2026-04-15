@@ -13,7 +13,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
 
 class ForumsController extends Controller
 {
@@ -53,7 +52,6 @@ class ForumsController extends Controller
 
         $forums = $query->get();
 
-        // expose capability so UI can show delete button based on claims
         $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
         foreach ($forums as $f) {
             $f->setAttribute('canDeleteComments', $canDelete);
@@ -80,10 +78,12 @@ class ForumsController extends Controller
             ->withCount(['reactions', 'comments'])
             ->first();
 
-        if ($forum) {
-            $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
-            $forum->setAttribute('canDeleteComments', $canDelete);
+        if (!$forum) {
+            return response()->json(['message' => 'Not found'], 404);
         }
+
+        $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
+        $forum->setAttribute('canDeleteComments', $canDelete);
 
         return response()->json($forum, 200);
     }
@@ -91,11 +91,8 @@ class ForumsController extends Controller
     function create(Request $request)
     {
         $user = Auth::user();
-        $tags = $request->tags;
-
-        if (!is_array($tags)) {
-            $tags = [];
-        }
+        $rawTags = $request->tags;
+        $tags = is_array($rawTags) ? $rawTags : [];
 
         try {
             $forum = new Forums();
@@ -107,8 +104,11 @@ class ForumsController extends Controller
             $forum->closed = false;
             $forum->save();
 
-            if (count($tags) > 0) {
+            if (!empty($tags)) {
                 foreach ($tags as $tag) {
+                    if (!isset($tag['label']) || !is_string($tag['label'])) {
+                        continue;
+                    }
                     $forumTag = new Tags();
                     $forumTag->forum_id = $forum->id;
                     $forumTag->metatag = $tag['label'];
@@ -127,14 +127,14 @@ class ForumsController extends Controller
     function update($id, Request $request)
     {
         $user = Auth::user();
-        $tags = $request->tags;
-
-        if (!is_array($tags)) {
-            $tags = [];
-        }
+        $rawTags = $request->tags;
+        $tags = (is_array($rawTags)) ? $rawTags : null;
 
         try {
             $forum = Forums::where('id', $id)->first();
+            if (!$forum) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
             $forum->title = $request->title;
             $forum->content = $request->input('content');
             $forum->privacy = $request->private ? 'private' : 'public';
@@ -145,8 +145,11 @@ class ForumsController extends Controller
             if ($tags !== null) {
                 Tags::where('forum_id', $forum->id)->delete();
 
-                if (count($tags) > 0) {
+                if (!empty($tags)) {
                     foreach ($tags as $tag) {
+                        if (!isset($tag['label']) || !is_string($tag['label'])) {
+                            continue;
+                        }
                         $forumTag = new Tags();
                         $forumTag->forum_id = $forum->id;
                         $forumTag->metatag = $tag['label'];
@@ -179,6 +182,9 @@ class ForumsController extends Controller
     function addComment($id, Request $request)
     {
         $forum = Forums::where('id', $id)->first();
+        if (!$forum) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
         $user = Auth::user();
 
         $comment = new ForumComments();
@@ -221,6 +227,9 @@ class ForumsController extends Controller
     function addReaction($id, Request $request)
     {
         $forum = Forums::where('id', $id)->first();
+        if (!$forum) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
         $user = Auth::user();
 
         $forumReaction = ForumReactions::where([
@@ -318,8 +327,15 @@ class ForumsController extends Controller
 
             $comment = ForumComments::find($commentId);
 
+            if (!$comment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Comment not found'
+                ], 404);
+            }
+
             $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
-            $isOwner = $comment && $comment->user_id === $user->id;
+            $isOwner = $comment->user_id === $user->id;
 
             if (!$canDelete && !$isOwner) {
                 return response()->json([
@@ -356,11 +372,6 @@ class ForumsController extends Controller
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Comment not found'
-            ], 404);
         } catch (\Exception $e) {
             Log::error('Comment deletion failed: ' . $e->getMessage());
             return response()->json([

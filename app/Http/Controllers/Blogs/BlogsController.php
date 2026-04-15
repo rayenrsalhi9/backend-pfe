@@ -14,9 +14,7 @@ use App\Models\BlogReactions;
 use App\Models\Tags;
 use App\Models\ResponseAuditTrails;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
 
 class BlogsController extends Controller
 {
