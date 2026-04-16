@@ -57,6 +57,7 @@ Route::controller(AuthController::class)->group(function () {
     Route::post('auth/reset-password', 'resetPassword');
 });
 
+Route::get('document/{id}/office-viewer', [DocumentController::class, 'officeviewer']);
 Route::get('document/{id}/officeviewer', [DocumentController::class, 'officeviewer']);
 Route::get('/company-profile', [CompanyProfileController::class, 'getCompanyProfile']);
 Route::post('/company-profile', [CompanyProfileController::class, 'updateCompanyProfile']);
@@ -314,15 +315,11 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         Route::delete('/reminder/{id}', [ReminderController::class, 'deleteReminder']);
     });
 
+    Route::get('/reminder/all/current-user', [ReminderController::class, 'getReminderForLoginUser']);
     Route::get('/reminder/all/currentuser', [ReminderController::class, 'getReminderForLoginUser']);
 
+    Route::delete('/reminder/current-user/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
     Route::delete('/reminder/currentuser/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
-
-    Route::middleware('hasToken:EMAIL_MANAGE_SMTP_SETTINGS')->group(function () {
-        Route::put('/email-smtp-setting/{id}', [EmailSMTPSettingController::class, 'update']);
-        Route::delete('/email-smtp-setting/{id}', [EmailSMTPSettingController::class, 'destroy']);
-        Route::get('/email-smtp-setting/{id}', [EmailSMTPSettingController::class, 'edit']);
-    });
 
     Route::get('/user-notification/notification', [UserNotificationController::class, 'index']);
     Route::get('/user-notification/notifications', [UserNotificationController::class, 'getNotifications']);

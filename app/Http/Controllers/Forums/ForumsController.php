@@ -24,6 +24,7 @@ class ForumsController extends Controller
         $banner = $request->banner;
 
         $query = Forums::orderBy('created_at', 'DESC')
+            ->with('category', 'creator')
             ->withCount(['reactions', 'comments'])
             ->when($limit, function ($query) use ($limit) {
                 return $query->take($limit);
