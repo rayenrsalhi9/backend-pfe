@@ -185,7 +185,7 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
         try {
             DB::beginTransaction();
             $model = $this->model->findOrFail($id);
-            
+
             $model->subject = $request['subject'];
             $model->documentId = $request['documentId'];
             $model->message = $request['message'];
@@ -205,6 +205,8 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
             $this->resetModel();
             $result = $this->parseResult($model);
 
+            $existingReminderUsers = ReminderUsers::where('reminderId', '=', $id)->pluck('userId')->toArray();
+
             $reminderUser = ReminderUsers::where('reminderId', '=', $id)->delete();
 
             $dailyReminder = DailyReminders::where('reminderId', '=', $id)->delete();
@@ -215,6 +217,23 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
 
             if ($reminderUsers) {
                 $model->reminderUsers()->createMany($reminderUsers);
+
+                $currentUserId = Auth::parseToken()->getPayload()->get('userId');
+                $newUserIds = array_filter(array_column($reminderUsers, 'userId'), function($userId) use ($existingReminderUsers, $currentUserId) {
+                    return !in_array($userId, $existingReminderUsers) && $userId !== $currentUserId;
+                });
+
+                foreach ($newUserIds as $userId) {
+                    UserNotifications::create([
+                        'userId' => $userId,
+                        'isRead' => 0,
+                        'message' => 'Reminder updated: ' . $request['subject'],
+                        'documentId' => $request['documentId'] ?? null,
+                        'type' => 'reminder'
+                    ]);
+
+                    $this->triggerPusherNotification($userId, 'Reminder updated: ' . $request['subject']);
+                }
             } else {
                 $userId = Auth::parseToken()->getPayload()->get('userId');
                 $model->reminderUsers()->createMany(array(['userId' => $userId, 'reminderId' => $model->id]));
