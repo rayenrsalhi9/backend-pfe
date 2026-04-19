@@ -1,10 +1,7 @@
 <?php
 
 use Pusher\Pusher;
-use App\Models\Conversation;
 use Illuminate\Http\Request;
-use App\Events\ConversationEvent;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
@@ -39,8 +36,6 @@ use App\Http\Controllers\Forums\ForumsController;
 use App\Http\Controllers\ResponseAuditTrailController;
 use App\Http\Controllers\SurverysController;
 
-// use App\Http\Controllers\PublicArticlesController;
-
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -62,14 +57,14 @@ Route::controller(AuthController::class)->group(function () {
     Route::post('auth/reset-password', 'resetPassword');
 });
 
+Route::get('document/{id}/office-viewer', [DocumentController::class, 'officeviewer']);
 Route::get('document/{id}/officeviewer', [DocumentController::class, 'officeviewer']);
-Route::get('/companyProfile', [CompanyProfileController::class, 'getCompanyProfile']);
-Route::post('/companyProfile', [CompanyProfileController::class, 'updateCompanyProfile']);
+Route::get('/company-profile', [CompanyProfileController::class, 'getCompanyProfile']);
+Route::post('/company-profile', [CompanyProfileController::class, 'updateCompanyProfile']);
 
 Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::post('auth/refresh', [AuthController::class, 'refresh']);
-    /* Route::get('/user/{id}', [UserController::class, 'edit']); */
 
     Route::post('pusher/auth', function (Request $request) {
 
@@ -80,7 +75,7 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         }
 
         $channelName = $request->input('channel_name');
-        
+
         try {
             $pusher = new Pusher(
                 config('broadcasting.connections.pusher.key'),
@@ -111,7 +106,7 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
     Route::get('/user-dropdown', [UserController::class, 'dropdown']);
 
     Route::get('/user-with-claim', [UserController::class, 'getUsersWithClaim'])
-    ->middleware('hasToken:USER_VIEW_USERS');
+        ->middleware('hasToken:USER_VIEW_USERS');
 
     Route::middleware('hasToken:USER_CREATE_USER')->group(function () {
         Route::post('/user', [UserController::class, 'create']);
@@ -130,37 +125,37 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
     });
 
     Route::middleware('hasToken:USER_EDIT_USER')->group(function () {
-        Route::get('/employes', [UserController::class, 'getEmployes']);
+        Route::get('/employees', [UserController::class, 'getEmployes']);
     });
 
 
     Route::middleware('hasToken:USER_RESET_PASSWORD')->group(function () {
-        Route::post('/user/resetpassword', [UserController::class, 'submitResetPassword']);
+        Route::post('/user/reset-password', [UserController::class, 'submitResetPassword']);
     });
 
-    Route::post('/user/changepassword', [UserController::class, 'changePassword']);
+    Route::post('/user/change-password', [UserController::class, 'changePassword']);
 
     Route::put('/users/profile', [UserController::class, 'updateUserProfile']);
 
     Route::middleware('hasToken:USER_ASSIGN_PERMISSION')->group(function () {
-        Route::put('/userClaim/{id}', [UserClaimController::class, 'update']);
+        Route::put('/user-claim/{id}', [UserClaimController::class, 'update']);
     });
 
     Route::middleware('hasToken:DASHBOARD_VIEW_DASHBOARD')->group(function () {
-        Route::get('/dashboard/dailyreminder/{month}/{year}', [DashboardController::class, 'getDailyReminders']);
-        Route::get('/dashboard/weeklyreminder/{month}/{year}', [DashboardController::class, 'getWeeklyReminders']);
-        Route::get('/dashboard/monthlyreminder/{month}/{year}', [DashboardController::class, 'getMonthlyReminders']);
-        Route::get('/dashboard/quarterlyreminder/{month}/{year}', [DashboardController::class, 'getQuarterlyReminders']);
-        Route::get('/dashboard/halfyearlyreminder/{month}/{year}', [DashboardController::class, 'getHalfYearlyReminders']);
-        Route::get('/dashboard/yearlyreminder/{month}/{year}', [DashboardController::class, 'getYearlyReminders']);
-        Route::get('/dashboard/onetimereminder/{month}/{year}', [DashboardController::class, 'getOneTimeReminder']);
-        Route::get('/Dashboard/GetDocumentByCategory', [DocumentController::class, 'getDocumentsByCategoryQuery']);
+        Route::get('/dashboard/daily-reminder/{month}/{year}', [DashboardController::class, 'getDailyReminders']);
+        Route::get('/dashboard/weekly-reminder/{month}/{year}', [DashboardController::class, 'getWeeklyReminders']);
+        Route::get('/dashboard/monthly-reminder/{month}/{year}', [DashboardController::class, 'getMonthlyReminders']);
+        Route::get('/dashboard/quarterly-reminder/{month}/{year}', [DashboardController::class, 'getQuarterlyReminders']);
+        Route::get('/dashboard/half-yearly-reminder/{month}/{year}', [DashboardController::class, 'getHalfYearlyReminders']);
+        Route::get('/dashboard/yearly-reminder/{month}/{year}', [DashboardController::class, 'getYearlyReminders']);
+        Route::get('/dashboard/one-time-reminder/{month}/{year}', [DashboardController::class, 'getOneTimeReminder']);
+        Route::get('/dashboard/get-document-by-category', [DocumentController::class, 'getDocumentsByCategoryQuery']);
         Route::get('/documents/transactions', [DocumentAuditTrailController::class, 'documentsTransactions']);
         Route::get('/documents/extension', [DocumentController::class, 'countByExtension']);
         Route::get('/user', [UserController::class, 'index']);
     });
 
-    Route::get('/category/dropdown', [CategoryController::class, 'GetAllCategoriesForDropDown']);
+    Route::get('/category/dropdown', [CategoryController::class, 'getAllCategoriesForDropDown']);
     Route::middleware('hasToken:DOCUMENT_CATEGORY_MANAGE_DOCUMENT_CATEGORY')->group(function () {
         Route::get('category', [CategoryController::class, 'index']);
         Route::post('/category', [CategoryController::class, 'create']);
@@ -202,33 +197,29 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
     });
 
     Route::middleware('hasToken:EMAIL_MANAGE_SMTP_SETTINGS')->group(function () {
-        Route::get('/emailSMTPSetting', [EmailSMTPSettingController::class, 'index']);
-        Route::post('/emailSMTPSetting', [EmailSMTPSettingController::class, 'create']);
-        Route::put('/emailSMTPSetting/{id}', [EmailSMTPSettingController::class, 'update']);
-        Route::delete('/emailSMTPSetting/{id}', [EmailSMTPSettingController::class, 'destroy']);
-        Route::get('/emailSMTPSetting/{id}', [EmailSMTPSettingController::class, 'edit']);
+        Route::get('/email-smtp-setting', [EmailSMTPSettingController::class, 'index']);
+        Route::post('/email-smtp-setting', [EmailSMTPSettingController::class, 'create']);
+        Route::put('/email-smtp-setting/{id}', [EmailSMTPSettingController::class, 'update']);
+        Route::delete('/email-smtp-setting/{id}', [EmailSMTPSettingController::class, 'destroy']);
+        Route::get('/email-smtp-setting/{id}', [EmailSMTPSettingController::class, 'edit']);
     });
 
     Route::get('/document/{id}/download/{isVersion}', [DocumentController::class, 'downloadDocument']);
-    Route::get('/document/{id}/readText/{isVersion}', [DocumentController::class, 'readTextDocument']);
+    Route::get('/document/{id}/read-text/{isVersion}', [DocumentController::class, 'readTextDocument']);
     Route::middleware('hasToken:ALL_DOCUMENTS_VIEW_DOCUMENTS')->group(function () {
         Route::get('/documents', [DocumentController::class, 'getDocuments']);
     });
-
-    // Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_EDIT_DOCUMENT,ASSIGNED_DOCUMENTS_EDIT_DOCUMENT']], function () {
-    //     Route::post('/document', [DocumentController::class, 'saveDocument']);
-    // });
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_CREATE_DOCUMENT,ASSIGNED_DOCUMENTS_CREATE_DOCUMENT']], function () {
         Route::post('/document', [DocumentController::class, 'saveDocument']);
     });
 
-    Route::get('/document/assignedDocuments', [DocumentController::class, 'assignedDocuments']);
+    Route::get('/document/assigned-documents', [DocumentController::class, 'assignedDocuments']);
 
     Route::get('/document/{id}', [DocumentController::class, 'getDocumentbyId']);
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_EDIT_DOCUMENT,ASSIGNED_DOCUMENTS_EDIT_DOCUMENT']], function () {
-        Route::get('/document/{id}/getMetatag', [DocumentController::class, 'getDocumentMetatags']);
+        Route::get('/document/{id}/get-metatag', [DocumentController::class, 'getDocumentMetatags']);
     });
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_EDIT_DOCUMENT,ASSIGNED_DOCUMENTS_EDIT_DOCUMENT']], function () {
@@ -240,68 +231,68 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
     });
 
     Route::middleware('hasToken:DOCUMENT_AUDIT_TRAIL_VIEW_DOCUMENT_AUDIT_TRAIL')->group(function () {
-        Route::get('/documentAuditTrail', [DocumentAuditTrailController::class, 'getDocumentAuditTrails']);
+        Route::get('/document-audit-trail', [DocumentAuditTrailController::class, 'getDocumentAuditTrails']);
     });
 
-    Route::post('/documentAuditTrail', [DocumentAuditTrailController::class, 'saveDocumentAuditTrail']);
+    Route::post('/document-audit-trail', [DocumentAuditTrailController::class, 'saveDocumentAuditTrail']);
 
-    Route::get('/documentComment/{documentId}', [DocumentCommentController::class, 'index']);
+    Route::get('/document-comment/{documentId}', [DocumentCommentController::class, 'index']);
 
-    Route::delete('/documentComment/{id}', [DocumentCommentController::class, 'destroy']);
+    Route::delete('/document-comment/{id}', [DocumentCommentController::class, 'destroy']);
 
-    Route::post('/documentComment', [DocumentCommentController::class, 'saveDocumentComment']);
-
-    Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::get('/DocumentRolePermission/{id}', [DocumentPermissionController::class, 'edit']);
-    });
+    Route::post('/document-comment', [DocumentCommentController::class, 'saveDocumentComment']);
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::post('/documentRolePermission', [DocumentPermissionController::class, 'addDocumentRolePermission']);
+        Route::get('/document-role-permission/{id}', [DocumentPermissionController::class, 'edit']);
     });
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::post('/documentUserPermission', [DocumentPermissionController::class, 'addDocumentUserPermission']);
+        Route::post('/document-role-permission', [DocumentPermissionController::class, 'addDocumentRolePermission']);
     });
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::post('/documentRolePermission/multiple', [DocumentPermissionController::class, 'multipleDocumentsToUsersAndRoles']);
+        Route::post('/document-user-permission', [DocumentPermissionController::class, 'addDocumentUserPermission']);
     });
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::delete('/documentUserPermission/{id}', [DocumentPermissionController::class, 'deleteDocumentUserPermission']);
+        Route::post('/document-role-permission/multiple', [DocumentPermissionController::class, 'multipleDocumentsToUsersAndRoles']);
     });
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::delete('/documentRolePermission/{id}', [DocumentPermissionController::class, 'deleteDocumentRolePermission']);
+        Route::delete('/document-user-permission/{id}', [DocumentPermissionController::class, 'deleteDocumentUserPermission']);
     });
 
-    Route::get('/document/{id}/isDownloadFlag/isPermission/{isPermission}', [DocumentPermissionController::class, 'getIsDownloadFlag']);
+    Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
+        Route::delete('/document-role-permission/{id}', [DocumentPermissionController::class, 'deleteDocumentRolePermission']);
+    });
 
-    Route::get('/documentversion/{documentId}', [DocumentVersionController::class, 'index']);
+    Route::get('/document/{id}/is-download-flag/is-permission/{isPermission}', [DocumentPermissionController::class, 'getIsDownloadFlag']);
+
+    Route::get('/document-version/{documentId}', [DocumentVersionController::class, 'index']);
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_VIEW_DOCUMENTS,ASSIGNED_DOCUMENTS_UPLOAD_NEW_VERSION']], function () {
-        Route::post('/documentversion', [DocumentVersionController::class, 'saveNewVersionDocument']);
+        Route::post('/document-version', [DocumentVersionController::class, 'saveNewVersionDocument']);
     });
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_VIEW_DOCUMENTS,ASSIGNED_DOCUMENTS_UPLOAD_NEW_VERSION']], function () {
-        Route::post('/documentversion/{id}/restore/{versionId}', [DocumentVersionController::class, 'restoreDocumentVersion']);
+        Route::post('/document-version/{id}/restore/{versionId}', [DocumentVersionController::class, 'restoreDocumentVersion']);
     });
 
-    Route::get('/documentToken/{documentId}/token', [DocumentTokenController::class, 'getDocumentToken']);
-    Route::delete('/documentToken/{token}', [DocumentTokenController::class, 'deleteDocumentToken']);
+    Route::get('/document-token/{documentId}/token', [DocumentTokenController::class, 'getDocumentToken']);
+    Route::delete('/document-token/{token}', [DocumentTokenController::class, 'deleteDocumentToken']);
     Route::post('/reminder/document', [ReminderController::class, 'addReminder']);
-    Route::get('/reminder/{id}/myreminder', [ReminderController::class, 'edit']);
+    Route::get('/reminder/{id}/my-reminder', [ReminderController::class, 'edit']);
 
     Route::middleware('hasToken:USER_ASSIGN_USER_ROLE')->group(function () {
-        Route::get('/roleusers/{roleId}', [RoleUsersController::class, 'getRoleUsers']);
+        Route::get('/role-users/{roleId}', [RoleUsersController::class, 'getRoleUsers']);
     });
 
     Route::middleware('hasToken:USER_ASSIGN_USER_ROLE')->group(function () {
-        Route::put('/roleusers/{roleId}', [RoleUsersController::class, 'updateRoleUsers']);
+        Route::put('/role-users/{roleId}', [RoleUsersController::class, 'updateRoleUsers']);
     });
 
     Route::middleware('hasToken:LOGIN_AUDIT_VIEW_LOGIN_AUDIT_LOGS')->group(function () {
-        Route::get('/loginAudit', [LoginAuditController::class, 'getLoginAudit']);
+        Route::get('/login-audit', [LoginAuditController::class, 'getLoginAudit']);
     });
 
     Route::middleware('hasToken:REMINDER_VIEW_REMINDERS')->group(function () {
@@ -324,33 +315,29 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         Route::delete('/reminder/{id}', [ReminderController::class, 'deleteReminder']);
     });
 
+    Route::get('/reminder/all/current-user', [ReminderController::class, 'getReminderForLoginUser']);
+
     Route::get('/reminder/all/currentuser', [ReminderController::class, 'getReminderForLoginUser']);
+
+    Route::delete('/reminder/current-user/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
 
     Route::delete('/reminder/currentuser/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
 
-    Route::middleware('hasToken:EMAIL_MANAGE_SMTP_SETTINGS')->group(function () {
-        Route::put('/emailSMTPSetting/{id}', [EmailSMTPSettingController::class, 'update']);
-        Route::delete('/emailSMTPSetting/{id}', [EmailSMTPSettingController::class, 'destroy']);
-        Route::get('/emailSMTPSetting/{id}', [EmailSMTPSettingController::class, 'edit']);
-    });
-
-    Route::get('/userNotification/notification', [UserNotificationController::class, 'index']);
-    Route::get('/userNotification/notifications', [UserNotificationController::class, 'getNotifications']);
-    Route::post('/userNotification/MarkAsRead', [UserNotificationController::class, 'markAsRead']);
-    Route::post('/UserNotification/MarkAllAsRead', [UserNotificationController::class, 'markAllAsRead']);
+    Route::get('/user-notification/notification', [UserNotificationController::class, 'index']);
+    Route::get('/user-notification/notifications', [UserNotificationController::class, 'getNotifications']);
+    Route::post('/user-notification/mark-as-read', [UserNotificationController::class, 'markAsRead']);
+    Route::post('/user-notification/mark-all-as-read', [UserNotificationController::class, 'markAllAsRead']);
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_VIEW_DOCUMENTS,ASSIGNED_DOCUMENTS_SEND_EMAIL']], function () {
         Route::post('/email', [EmailController::class, 'sendEmail']);
     });
 
-    //languages
     Route::post('/languages', [LanguageController::class, 'saveLanguage']);
     Route::delete('/languages/{id}', [LanguageController::class, 'deleteLanguage']);
     Route::get('/languages', [LanguageController::class, 'getLanguages']);
-    Route::get('/defaultlanguage', [LanguageController::class, 'defaultlanguage']);
-    Route::get('/languageById/{id}', [LanguageController::class, 'getFileContentById']);
+    Route::get('/default-language', [LanguageController::class, 'defaultlanguage']);
+    Route::get('/language-by-id/{id}', [LanguageController::class, 'getFileContentById']);
 
-    //chat
     Route::prefix('conversations')->controller(ConversationController::class)->group(function () {
 
         Route::get('', 'conversationsByUser');
@@ -360,8 +347,8 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         Route::put('update/{id}', 'conversationUpdate');
 
 
-        Route::post('addUser', 'conversationAddUser');
-        Route::post('removeUser', 'conversationRemoveUser');
+        Route::post('add-user', 'conversationAddUser');
+        Route::post('remove-user', 'conversationRemoveUser');
         Route::post('create', 'conversationCreate');
 
         Route::post('message', 'messageSend');
@@ -464,9 +451,3 @@ Route::prefix('surveys')->controller(SurverysController::class)->group(function 
 });
 
 Route::get('/i18n/{fileName}', [LanguageController::class, 'downloadFile']);
-
-
-
-// Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-//     return $request->user();
-// });

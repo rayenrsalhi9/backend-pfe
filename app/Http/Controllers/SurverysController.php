@@ -50,7 +50,20 @@ class SurverysController extends Controller
 
     function getLast()
     {
-        $survey = Surveys::where('closed', false)->orderBy('created_at', 'DESC')->latest()->first();
+        $user = Auth::user();
+
+        if (!$user) {
+            return response()->json(null, 200);
+        }
+
+        $query = Surveys::where('closed', false)->latest();
+
+        $query->whereDoesntHave('answers', function ($q) use ($user) {
+            $q->where('user_id', $user->id);
+        });
+
+        $survey = $query->first();
+
         return response()->json($survey, 200);
     }
 
