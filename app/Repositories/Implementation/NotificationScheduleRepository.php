@@ -126,7 +126,7 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
         }
     }
 
-    public function monthyReminder()
+    public function monthlyReminder()
     {
         $currentDate = Carbon::now();  //Carbon::create(2023, 02, 27);
 
@@ -356,17 +356,33 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
     public function reminderSchedulerServiceQuery()
     {
         $currentDate = Carbon::now();
+        $todayStart = $currentDate->copy()->startOfDay();
+        $todayEnd = $currentDate->copy()->endOfDay();
 
         $reminderSchedulers = ReminderSchedulers::select(['reminderSchedulers.*'])
             ->where('isActive', '=', 1)
             ->where('duration', '<=', $currentDate)
-            ->orderBy('duration', 'DESC')
+            ->orderBy('duration', 'ASC')
             ->take(10)
             ->get();
 
         if ($reminderSchedulers->count() > 0) {
 
             foreach ($reminderSchedulers as $reminderScheduler) {
+
+                // Skip if this specific reminder was already processed today (prevent duplicates)
+                $existingNotification = UserNotifications::where('userId', $reminderScheduler['userId'])
+                    ->where('message', $reminderScheduler['message'])
+                    ->where('documentId', $reminderScheduler['documentId'])
+                    ->where('createdDate', '>=', $todayStart)
+                    ->where('createdDate', '<=', $todayEnd)
+                    ->exists();
+
+                if ($existingNotification) {
+                    $reminderScheduler->isActive = false;
+                    $reminderScheduler->save();
+                    continue;
+                }
 
                 $model = UserNotifications::create([
                     'userId' => $reminderScheduler['userId'],

@@ -167,8 +167,15 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
         $currentUserId = Auth::id();
 
         return Users::select(['id', 'email', 'firstName', 'lastName', 'isDeleted'])
-        ->whereHas('userRoles.role.roleClaims', function ($query) use ($claimType) {
-            $query->where('claimType', $claimType);
+        ->where(function ($query) use ($claimType) {
+            // Users with the claim through their role
+            $query->whereHas('userRoles.role.roleClaims', function ($q) use ($claimType) {
+                $q->where('claimType', $claimType);
+            })
+            // OR users with direct claim
+            ->orWhereHas('userClaims', function ($q) use ($claimType) {
+                $q->where('claimType', $claimType);
+            });
         })
         ->where('isDeleted', 0)
         ->where('id', '!=', $currentUserId)

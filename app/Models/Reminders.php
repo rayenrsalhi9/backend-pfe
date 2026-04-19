@@ -22,10 +22,15 @@ class Reminders extends Model
 
     protected $dates = ['startDate', 'endDate'];
 
+    protected $casts = [
+        'startDate' => 'datetime:Y-m-d H:i:s',
+        'endDate' => 'datetime:Y-m-d H:i:s',
+    ];
+
     protected $fillable = [
         'subject', 'message', 'frequency', 'startDate', 'endDate', 'dayOfWeek',
         'isRepeated', 'isEmailNotification', 'documentId', 'createdBy',
-        'modifiedBy', 'isDeleted'
+        'modifiedBy', 'isDeleted', 'category'
     ];
 
     public function documents()

@@ -316,9 +316,11 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
     });
 
     Route::get('/reminder/all/current-user', [ReminderController::class, 'getReminderForLoginUser']);
+
     Route::get('/reminder/all/currentuser', [ReminderController::class, 'getReminderForLoginUser']);
 
     Route::delete('/reminder/current-user/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
+
     Route::delete('/reminder/currentuser/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
 
     Route::get('/user-notification/notification', [UserNotificationController::class, 'index']);

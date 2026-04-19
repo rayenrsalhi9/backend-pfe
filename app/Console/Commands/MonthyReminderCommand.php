@@ -32,7 +32,7 @@ class MonthyReminderCommand extends Command
 
     public function handle()
     {
-        $this->notificationRepository->monthyReminder();
+        $this->notificationRepository->monthlyReminder();
         $this->info('Monthy Reminder...');
     }
 }
