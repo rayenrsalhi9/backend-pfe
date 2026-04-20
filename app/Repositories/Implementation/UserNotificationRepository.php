@@ -46,7 +46,9 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
                 ->orderBy('isRead', 'DESC')
                 ->orderBy('createdDate', 'DESC')
                 ->with('user')
-                ->with('documents')
+                ->with(['documents' => function ($query) {
+                    $query->withoutGlobalScope('isDeleted');
+                }])
                 ->take(10)
                 ->get();
 
@@ -73,7 +75,9 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
             }
             $query = UserNotifications::where('userId', '=', $userId)
                 ->with('user')
-                ->with('documents');
+                ->with(['documents' => function ($query) {
+                    $query->withoutGlobalScope('isDeleted');
+                }]);
 
             $orderByRaw = $attributes->orderBy ?? 'createdDate desc';
             $orderByArray = explode(' ', $orderByRaw);
@@ -130,6 +134,8 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
 
             $count = $query->count();
             return $count;
+        } catch (RepositoryException $e) {
+            throw $e;
         } catch (\Exception $e) {
             \Log::error('getUserNotificaionCount error: ' . $e->getMessage());
             return 0;

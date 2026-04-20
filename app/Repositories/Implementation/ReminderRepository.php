@@ -20,29 +20,27 @@ use Pusher\Pusher;
 
 class ReminderRepository extends BaseRepository implements ReminderRepositoryInterface
 {
-
-    /**
-     * @var Model
-     */
     protected $model;
 
-    /**
-     * BaseRepository constructor.
-     *
-     * @param Model $model
-     */
     public static function model()
     {
         return Reminders::class;
     }
+
     public function getReminders($attributes)
     {
         $query = Reminders::select([
-            'reminders.createdDate', 'reminders.startDate', 'reminders.endDate', 'reminders.id', 'reminders.subject', 'reminders.message',
-            'reminders.frequency', 'reminders.category'
+            'reminders.createdDate',
+            'reminders.startDate',
+            'reminders.endDate',
+            'reminders.id',
+            'reminders.subject',
+            'reminders.message',
+            'reminders.frequency',
+            'reminders.category'
         ]);
 
-        $orderByArray =  explode(' ', $attributes->orderBy);
+        $orderByArray = explode(' ', $attributes->orderBy ?? 'startDate asc');
         $orderBy = $orderByArray[0];
         $direction = $orderByArray[1] ?? 'asc';
 
@@ -56,18 +54,18 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
             $query = $query->orderBy('endDate', $direction);
         }
 
-        if ($attributes->subject) {
-            $query = $query->where('subject',  'like', '%' . $attributes->subject . '%');
+        if (isset($attributes->subject) && $attributes->subject) {
+            $query = $query->where('subject', 'like', '%' . $attributes->subject . '%');
         }
 
-        if ($attributes->message) {
+        if (isset($attributes->message) && $attributes->message) {
             $query = $query->where('message', 'like', '%' . $attributes->message . '%');
         }
 
-        if ($attributes->frequency != '') {
+        if (isset($attributes->frequency) && $attributes->frequency != '') {
             $query = $query->where('frequency', $attributes->frequency);
         }
-        $results = $query->skip($attributes->skip)->take($attributes->pageSize)->get();
+        $results = $query->skip($attributes->skip ?? 0)->take($attributes->pageSize ?? 10)->get();
         return $results;
     }
 
@@ -75,19 +73,51 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
     {
         $query = Reminders::query();
 
-        if ($attributes->subject) {
-            $query = $query->where('subject', $attributes->subject);
+        if (isset($attributes->subject) && $attributes->subject) {
+            $query = $query->where('subject', 'like', '%' . $attributes->subject . '%');
         }
 
-        if ($attributes->message) {
+        if (isset($attributes->message) && $attributes->message) {
             $query = $query->where('message', 'like', '%' . $attributes->message . '%');
         }
-        if ($attributes->frequency != '') {
-            $query = $query->where('frequency',  $attributes->frequency);
+
+        if (isset($attributes->frequency) && $attributes->frequency != '') {
+            $query = $query->where('frequency', $attributes->frequency);
         }
 
-        $count = $query->count();
-        return $count;
+        return $query->count();
+    }
+
+    private function checkOwnership(Reminders $model)
+    {
+        $userId = Auth::parseToken()->getPayload()->get('userId');
+
+        // Owner check
+        if ($model->createdBy === $userId) {
+            return true;
+        }
+
+        // Assigned user check
+        $isAssigned = $model->reminderUsers()->where('userId', $userId)->exists();
+        if ($isAssigned) {
+            return true;
+        }
+
+        throw new RepositoryException('Access Denied: You do not have permission to modify this reminder.', 403);
+    }
+
+    public function delete($id)
+    {
+        $model = $this->model->findOrFail($id);
+        $this->checkOwnership($model);
+
+        $userId = Auth::parseToken()->getPayload()->get('userId');
+
+        $model->isDeleted = true;
+        $model->deletedBy = $userId;
+        $model->deleted_at = Carbon::now();
+
+        return $model->save();
     }
 
     public function addReminders($request)
@@ -97,11 +127,19 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
 
             $requestData = is_array($request) ? $request : $request->all();
 
-            if ($requestData['frequency'] == '') {
+            // Simple Validation
+            if (empty($requestData['subject'])) {
+                throw new \Exception('Subject is required');
+            }
+            if (empty($requestData['startDate'])) {
+                throw new \Exception('Start date is required');
+            }
+
+            if (!isset($requestData['frequency']) || $requestData['frequency'] == '') {
                 $requestData['frequency'] = FrequencyEnum::OneTime->value;
             }
 
-            if (!$requestData['isRepeated']) {
+            if (!isset($requestData['isRepeated']) || !$requestData['isRepeated']) {
                 $requestData['frequency'] = FrequencyEnum::OneTime->value;
             }
 
@@ -112,7 +150,7 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
 
             $notificationPayloads = [];
             $uniqueUserIds = [];
-            if ($requestData['reminderUsers']) {
+            if (!empty($requestData['reminderUsers'])) {
                 $model->reminderUsers()->createMany($requestData['reminderUsers']);
 
                 foreach ($requestData['reminderUsers'] as $user) {
@@ -134,7 +172,7 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
                     ];
                 }
             } else {
-                $model->reminderUsers()->createMany(array(['userId' => $currentUserId, 'reminderId' => $model->id]));
+                $model->reminderUsers()->createMany([['userId' => $currentUserId, 'reminderId' => $model->id]]);
 
                 $notificationPayloads[] = [
                     'userId' => $currentUserId,
@@ -170,8 +208,9 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
             return $saved;
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Error adding reminder: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Error in saving data.',
+                'message' => 'Error in saving data: ' . $e->getMessage(),
             ], 409);
         }
     }
@@ -181,8 +220,14 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
         try {
             DB::beginTransaction();
             $model = $this->model->findOrFail($id);
+            $this->checkOwnership($model);
 
             $requestData = is_array($request) ? $request : $request->all();
+
+            // Simple Validation
+            if (isset($requestData['subject']) && empty($requestData['subject'])) {
+                throw new \Exception('Subject cannot be empty');
+            }
 
             if (array_key_exists('subject', $requestData)) {
                 $model->subject = $requestData['subject'];
@@ -211,6 +256,7 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
             if (array_key_exists('endDate', $requestData)) {
                 $model->endDate = $requestData['endDate'];
             }
+
             $reminderUsers = array_key_exists('reminderUsers', $requestData) ? $requestData['reminderUsers'] : [];
             $dailyReminders = array_key_exists('dailyReminders', $requestData) ? $requestData['dailyReminders'] : [];
             $halfYearlyReminders = array_key_exists('halfYearlyReminders', $requestData) ? $requestData['halfYearlyReminders'] : [];
@@ -218,52 +264,45 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
 
             $saved = $model->save();
             $this->resetModel();
-            $result = $this->parseResult($model);
 
             $existingReminderUsers = ReminderUsers::where('reminderId', '=', $id)->pluck('userId')->toArray();
 
             ReminderUsers::where('reminderId', '=', $id)->delete();
-
             DailyReminders::where('reminderId', '=', $id)->delete();
-
             HalfYearlyReminders::where('reminderId', '=', $id)->delete();
-
             QuarterlyReminders::where('reminderId', '=', $id)->delete();
 
             $notificationPayloads = [];
+            $currentUserId = Auth::parseToken()->getPayload()->get('userId');
 
-            if ($reminderUsers) {
+            if (!empty($reminderUsers)) {
                 $model->reminderUsers()->createMany($reminderUsers);
 
-                $currentUserId = Auth::parseToken()->getPayload()->get('userId');
-                $newUserIds = array_filter(array_column($reminderUsers, 'userId'), function($userId) use ($existingReminderUsers, $currentUserId) {
+                $newUserIds = array_filter(array_column($reminderUsers, 'userId'), function ($userId) use ($existingReminderUsers, $currentUserId) {
                     return !in_array($userId, $existingReminderUsers) && $userId !== $currentUserId;
                 });
 
                 foreach ($newUserIds as $userId) {
                     $notificationPayloads[] = [
                         'userId' => $userId,
-                        'message' => 'Reminder updated: ' . $requestData['subject'],
+                        'message' => 'Reminder updated: ' . $model->subject,
                     ];
                 }
             } else {
-                $userId = Auth::parseToken()->getPayload()->get('userId');
-                $model->reminderUsers()->createMany(array(['userId' => $userId, 'reminderId' => $model->id]));
+                $model->reminderUsers()->createMany([['userId' => $currentUserId, 'reminderId' => $model->id]]);
 
                 $notificationPayloads[] = [
-                    'userId' => $userId,
-                    'message' => 'Reminder updated: ' . $requestData['subject'],
+                    'userId' => $currentUserId,
+                    'message' => 'Reminder updated: ' . $model->subject,
                 ];
             }
 
             if (!empty($dailyReminders)) {
                 $model->dailyReminders()->createMany($dailyReminders);
             }
-
             if (!empty($halfYearlyReminders)) {
                 $model->halfYearlyReminders()->createMany($halfYearlyReminders);
             }
-
             if (!empty($quarterlyReminders)) {
                 $model->quarterlyReminders()->createMany($quarterlyReminders);
             }
@@ -273,20 +312,18 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
             }
             DB::commit();
 
-            if (!empty($notificationPayloads)) {
-                foreach ($notificationPayloads as $payload) {
-                    UserNotifications::create([
-                        'userId' => $payload['userId'],
-                        'isRead' => 0,
-                        'message' => $payload['message'],
-                        'type' => 'reminder'
-                    ]);
+            foreach ($notificationPayloads as $payload) {
+                UserNotifications::create([
+                    'userId' => $payload['userId'],
+                    'isRead' => 0,
+                    'message' => $payload['message'],
+                    'type' => 'reminder'
+                ]);
 
-                    $this->triggerPusherNotification($payload['userId'], $payload['message'], $model->id);
-                }
+                $this->triggerPusherNotification($payload['userId'], $payload['message'], $model->id);
             }
 
-            return $result;
+            return $this->parseResult($model);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             DB::rollBack();
             Log::error('Error updating reminder: ' . $e->getMessage());
@@ -308,21 +345,30 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
         return $this->parseResult($model);
     }
 
-    public function  getReminderForLoginUser($attributes)
+    public function getReminderForLoginUser($attributes)
     {
         $userId = Auth::parseToken()->getPayload()->get('userId');
         $query = Reminders::select([
-            'reminders.createdDate', 'reminders.startDate', 'reminders.endDate', 'reminders.id', 'reminders.subject', 'reminders.message',
-            'reminders.frequency', 'reminders.category'
+            'reminders.createdDate',
+            'reminders.startDate',
+            'reminders.endDate',
+            'reminders.id',
+            'reminders.subject',
+            'reminders.message',
+            'reminders.frequency',
+            'reminders.category'
         ])
-            ->orWhereExists(function ($query) use ($userId) {
-                $query->select(DB::raw(1))
-                    ->from('reminderUsers')
-                    ->whereRaw('reminderUsers.reminderId = reminders.id')
-                    ->where('reminderUsers.userId', '=', $userId);
+            ->where(function ($q) use ($userId) {
+                $q->where('createdBy', $userId)
+                    ->orWhereExists(function ($query) use ($userId) {
+                        $query->select(DB::raw(1))
+                            ->from('reminderUsers')
+                            ->whereRaw('reminderUsers.reminderId = reminders.id')
+                            ->where('reminderUsers.userId', '=', $userId);
+                    });
             });
 
-        $orderByArray =  explode(' ', $attributes->orderBy);
+        $orderByArray = explode(' ', $attributes->orderBy ?? 'startDate asc');
         $orderBy = $orderByArray[0];
         $direction = $orderByArray[1] ?? 'asc';
 
@@ -336,18 +382,19 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
             $query = $query->orderBy('endDate', $direction);
         }
 
-        if ($attributes->subject) {
-            $query = $query->where('subject',  'like', '%' . $attributes->subject . '%');
+        if (isset($attributes->subject) && $attributes->subject) {
+            $query = $query->where('subject', 'like', '%' . $attributes->subject . '%');
         }
 
-        if ($attributes->message) {
+        if (isset($attributes->message) && $attributes->message) {
             $query = $query->where('message', 'like', '%' . $attributes->message . '%');
         }
 
-        if ($attributes->frequency != '') {
+        if (isset($attributes->frequency) && $attributes->frequency != '') {
             $query = $query->where('frequency', $attributes->frequency);
         }
-        $results = $query->skip($attributes->skip)->take($attributes->pageSize)->get();
+
+        $results = $query->skip($attributes->skip ?? 0)->take($attributes->pageSize ?? 10)->get();
         return $results;
     }
 
@@ -355,35 +402,36 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
     {
         $userId = Auth::parseToken()->getPayload()->get('userId');
         $query = Reminders::query()
-            ->orWhereExists(function ($query) use ($userId) {
-                $query->select(DB::raw(1))
-                    ->from('reminderUsers')
-                    ->whereRaw('reminderUsers.reminderId = reminders.id')
-                    ->where('reminderUsers.userId', '=', $userId);
+            ->where(function ($q) use ($userId) {
+                $q->where('createdBy', $userId)
+                    ->orWhereExists(function ($query) use ($userId) {
+                        $query->select(DB::raw(1))
+                            ->from('reminderUsers')
+                            ->whereRaw('reminderUsers.reminderId = reminders.id')
+                            ->where('reminderUsers.userId', '=', $userId);
+                    });
             });
 
-        if ($attributes->subject) {
-            $query = $query->where('subject', $attributes->subject);
+        if (isset($attributes->subject) && $attributes->subject) {
+            $query = $query->where('subject', 'like', '%' . $attributes->subject . '%');
         }
 
-        if ($attributes->message) {
+        if (isset($attributes->message) && $attributes->message) {
             $query = $query->where('message', 'like', '%' . $attributes->message . '%');
         }
-        if ($attributes->frequency != '') {
-            $query = $query->where('frequency',  $attributes->frequency);
+        if (isset($attributes->frequency) && $attributes->frequency != '') {
+            $query = $query->where('frequency', $attributes->frequency);
         }
 
-        $count = $query->count();
-        return $count;
+        return $query->count();
     }
 
     public function deleteReminderCurrentUser($id)
     {
-
         $userId = Auth::parseToken()->getPayload()->get('userId');
-        return  ReminderUsers::where('reminderId', '=', $id)->Where('userId', '=', $userId)->delete();
+        return ReminderUsers::where('reminderId', '=', $id)->where('userId', '=', $userId)->delete();
     }
-    
+
     private function triggerPusherNotification(string $userId, string $message, ?string $reminderId = null): void
     {
         try {
@@ -397,20 +445,13 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
                 ]
             );
 
-            Log::info('Pusher notification triggered', [
-                'action' => 'pusher_triggered',
-                'notification_type' => 'reminder',
-                'reminder_id' => $reminderId
-            ]);
-
-            $pusher->trigger("user.{$userId}", 'notification', [
+            $pusher->trigger("private-App.Models.User.{$userId}", 'notification', [
                 'type' => 'reminder',
                 'data' => [
-                    'message' => $message
+                    'message' => $message,
+                    'reminder_id' => $reminderId
                 ]
             ]);
-
-            Log::info('Pusher notification triggered successfully');
         } catch (\Exception $e) {
             Log::error('Pusher notification failed: ' . $e->getMessage());
         }

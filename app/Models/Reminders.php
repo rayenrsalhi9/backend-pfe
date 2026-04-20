@@ -20,7 +20,9 @@ class Reminders extends Model
     const CREATED_AT = 'createdDate';
     const UPDATED_AT = 'modifiedDate';
 
-    protected $casts = [];
+    protected $casts = [
+        'frequency' => FrequencyEnum::class,
+    ];
 
     protected $dates = [];
 

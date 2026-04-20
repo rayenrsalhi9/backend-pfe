@@ -368,33 +368,30 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                     ->where('createdDate', '<=', $todayEnd)
                     ->exists();
 
-                if ($existingNotification) {
-                    $reminderScheduler->isActive = false;
-                    $reminderScheduler->save();
-                } else {
+                if (!$existingNotification) {
                     $model = UserNotifications::create([
                         'userId' => $reminderScheduler['userId'],
                         'reminderSchedulerId' => $reminderSchedulerId,
                         'isRead' => 0,
                         'message' => $reminderScheduler['message'],
                     ]);
-
-                    $user = Users::where('id', $reminderScheduler['userId'])->first();
-
-                    if ($reminderScheduler->isEmailNotification) {
-                        $sendEmailObject = clone  $reminderScheduler;
-                        $sendEmailObject['to_address'] = $user->email;
-
-                        try {
-                            $this->emailRepository->sendEmail($sendEmailObject);
-                        } catch (\Exception $e) {
-                            return $e->getMessage();
-                        }
-                    }
-
-                    $reminderScheduler->isActive = false;
-                    $reminderScheduler->save();
                 }
+
+                $user = Users::where('id', $reminderScheduler['userId'])->first();
+
+                if ($reminderScheduler->isEmailNotification) {
+                    $sendEmailObject = clone  $reminderScheduler;
+                    $sendEmailObject['to_address'] = $user->email;
+
+                    try {
+                        $this->emailRepository->sendEmail($sendEmailObject);
+                    } catch (\Exception $e) {
+                        Log::error('Email send failed for reminder scheduler: ' . $e->getMessage());
+                    }
+                }
+
+                $reminderScheduler->isActive = false;
+                $reminderScheduler->save();
             }
         }
     }

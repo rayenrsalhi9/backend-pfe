@@ -5,8 +5,11 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Repositories\Contracts\ReminderRepositoryInterface;
 
+use App\Http\Controllers\Traits\HasPermissionTrait;
+
 class ReminderController extends Controller
 {
+    use HasPermissionTrait;
     private $reminderRepository;
     protected $queryString;
 
@@ -35,12 +38,18 @@ class ReminderController extends Controller
 
     public function addReminder(Request $request)
     {
-        return  response($this->reminderRepository->addReminders($request->all()), 201);
+        if (!$this->hasPermission('REMINDER_CREATE_REMINDER')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        return response($this->reminderRepository->addReminders($request->all()), 201);
     }
 
     public function updateReminder(Request $request, $id)
     {
-        return  response($this->reminderRepository->updateReminders($request, $id), 201);
+        if (!$this->hasPermission('REMINDER_EDIT_REMINDER')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        return response($this->reminderRepository->updateReminders($request, $id), 201);
     }
 
     public function edit($id)
@@ -50,6 +59,9 @@ class ReminderController extends Controller
 
     public function deleteReminder($id)
     {
+        if (!$this->hasPermission('REMINDER_DELETE_REMINDER')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
         return response($this->reminderRepository->delete($id), 204);
     }
 

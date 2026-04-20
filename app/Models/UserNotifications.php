@@ -19,7 +19,7 @@ class UserNotifications extends Model
     const UPDATED_AT = 'modifiedDate';
 
     protected $fillable = [
-        'userId', 'message', 'isRead', 'documentId','type'
+        'userId', 'message', 'isRead', 'documentId', 'type', 'reminderSchedulerId'
     ];
 
     // protected $dates = ['createdDate', 'modifiedDate'];

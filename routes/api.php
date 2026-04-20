@@ -78,17 +78,24 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
         $channelName = $request->input('channel_name');
 
-        if (preg_match('/^App\.Models\.User\.(\d+)$/', $channelName, $matches)) {
+        $cleanChannelName = preg_replace('/^(private-|presence-)/', '', $channelName);
+
+        if (preg_match('/^App\.Models\.User\.(\d+)$/', $cleanChannelName, $matches)) {
             $channelUserId = (int) $matches[1];
             if ((int) $user->id !== $channelUserId) {
                 return response()->json(['error' => 'Forbidden'], 403);
             }
-        } elseif (preg_match('/^conversation\.(\d+)$/', $channelName, $matches)) {
+        } elseif (preg_match('/^conversation\.(\d+)$/', $cleanChannelName, $matches)) {
             $conversationId = $matches[1];
             $conversation = \App\Models\Conversation::find($conversationId);
             if (!$conversation || !$conversation->users()->where('user_id', $user->id)->exists()) {
                 return response()->json(['error' => 'Forbidden'], 403);
             }
+        } elseif ($channelName !== $cleanChannelName) {
+            // Has prefix but didn't match patterns - reject
+        } else {
+            // No prefix and no match - reject unknown channels
+            return response()->json(['error' => 'Forbidden'], 403);
         }
 
         try {
