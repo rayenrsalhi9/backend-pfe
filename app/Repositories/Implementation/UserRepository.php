@@ -164,7 +164,7 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
 
     public function getUsersWithClaim($claimType)
     {
-        $currentUserId = Auth::id();
+        $currentUserId = Auth::parseToken()->getPayload()->get('userId');
 
         return Users::select(['id', 'email', 'firstName', 'lastName', 'isDeleted'])
         ->where(function ($query) use ($claimType) {

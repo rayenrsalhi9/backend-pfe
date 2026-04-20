@@ -17,20 +17,21 @@ class Kernel extends ConsoleKernel
 
     protected $commands = [
         'App\Console\Commands\DailyReminderCommand',
+        'App\Console\Commands\MonthlyReminderCommand',
     ];
 
     protected function schedule(Schedule $schedule)
     {
         $schedule->command('notification:daily')->daily();
         $schedule->command('notification:weekly')->daily();
-        $schedule->command('notification:monthy')->daily();
+        $schedule->command('notification:monthly')->daily();
         $schedule->command('notification:quarterly')->daily();
         $schedule->command('notification:halfYearly')->daily();
         $schedule->command('notification:yearly')->daily();
         $schedule->command('notification:customDateReminderSchedule')->daily();
         $schedule->command('notification:reminderSchedule')->everyTenMinutes();
         $schedule->command('notification:sendEmailSuppliers')->everyTenMinutes();
-        
+
         // Clean up expired blacklisted tokens
         $schedule->call(function () {
             DB::table('jwt_blacklist')->where('expires_at', '<', now())->delete();

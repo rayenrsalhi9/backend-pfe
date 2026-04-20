@@ -36,89 +36,100 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
 
     public function getTop10Notification()
     {
-        $userId = Auth::parseToken()->getPayload()->get('userId');
-        if ($userId == null) {
+        try {
+            $userId = Auth::parseToken()->getPayload()->get('userId');
+            if ($userId == null) {
+                return [];
+            }
+
+            $results = UserNotifications::where('userId', '=', $userId)
+                ->orderBy('isRead', 'DESC')
+                ->orderBy('createdDate', 'DESC')
+                ->with('user')
+                ->with('documents')
+                ->take(10)
+                ->get();
+
+            foreach ($results as $notification) {
+                if ($notification->documentId && $notification->documents && $notification->documents->isDeleted) {
+                    $notification->message = $notification->message . ' [Event deleted]';
+                    $notification->documentId = null;
+                }
+            }
+
+            return $results;
+        } catch (\Exception $e) {
+            \Log::error('getTop10Notification error: ' . $e->getMessage());
             return [];
         }
-
-        $query = UserNotifications::select(['userNotifications.*', 'documents.id as documentId', 'documents.name as documentName'])
-            ->where('userNotifications.userId', '=', $userId)
-            //->where('documents.isDeleted', '=', false)
-            ->orderBy('userNotifications.isRead', 'DESC')
-            ->orderBy('userNotifications.createdDate', 'DESC')
-            ->with('user')
-            ->leftJoin('documents', function($join) {
-                $join->on('userNotifications.documentId', '=', 'documents.id')
-                     ->whereNull('documents.isDeleted');
-            });
-
-        $results = $query->take(10)->get();
-
-        return $results;
     }
 
     public function getUserNotificaions($attributes)
     {
-        $userId = Auth::parseToken()->getPayload()->get('userId');
-        if ($userId == null) {
-            throw new RepositoryException('User does not exist.');
+        try {
+            $userId = Auth::parseToken()->getPayload()->get('userId');
+            if ($userId == null) {
+                throw new RepositoryException('User does not exist.');
+            }
+            $query = UserNotifications::where('userId', '=', $userId)
+                ->with('user')
+                ->with('documents');
+
+            $orderByRaw = $attributes->orderBy ?? 'createdDate desc';
+            $orderByArray = explode(' ', $orderByRaw);
+            $orderBy = $orderByArray[0] ?? 'createdDate';
+            $direction = $orderByArray[1] ?? 'desc';
+
+            if ($orderBy == 'message') {
+                $query = $query->orderBy('message', $direction);
+            } elseif ($orderBy == 'createdDate') {
+                $query = $query->orderBy('createdDate', $direction);
+            }
+
+            $name = $attributes->name ?? null;
+            if ($name) {
+                $query = $query->where('message', 'like', '%' . $name . '%');
+            }
+
+            $skip = is_numeric($attributes->skip ?? null) ? (int)$attributes->skip : 0;
+            $pageSize = is_numeric($attributes->pageSize ?? null) ? (int)$attributes->pageSize : 10;
+            $results = $query->skip($skip)->take($pageSize)->get();
+
+            foreach ($results as $notification) {
+                if ($notification->documentId && $notification->documents && $notification->documents->isDeleted) {
+                    $notification->message = $notification->message . ' [Event deleted]';
+                    $notification->documentId = null;
+                }
+            }
+
+            return $results;
+        } catch (\Exception $e) {
+            \Log::error('getUserNotificaions error: ' . $e->getMessage());
+            return [];
         }
-        $query = UserNotifications::select(['userNotifications.*', 'documents.id as documentId', 'documents.name as documentName'])
-            ->where('userNotifications.userId', '=', $userId)
-            ->with('user')
-            ->leftJoin('documents', function($join) {
-                $join->on('userNotifications.documentId', '=', 'documents.id')
-                     ->whereNull('documents.isDeleted');
-            });
-
-        $orderByArray =  explode(' ', $attributes->orderBy);
-        $orderBy = $orderByArray[0];
-        $direction = $orderByArray[1] ?? 'asc';
-
-        if ($orderBy == 'message') {
-            $query = $query->orderBy('userNotifications.message', $direction);
-        }
-
-        if ($orderBy == 'createdDate') {
-            $query = $query->orderBy('userNotifications.message', $direction);
-        }
-
-        if ($attributes->name) {
-            $query = $query->where(function ($query) use ($attributes) {
-                $query->where('userNotifications.message', 'like', '%' . $attributes->name . '%')
-                    ->orWhere(function ($query) use ($attributes) {
-                        $query->where('documents.name', 'like', '%' . $attributes->name . '%');
-                    });
-            });
-        }
-
-        $results = $query->skip($attributes->skip)->take($attributes->pageSize)->get();
-
-        return $results;
     }
 
     public function getUserNotificaionCount($attributes)
     {
-        $userId = Auth::parseToken()->getPayload()->get('userId');
-        if ($userId == null) {
-            throw new RepositoryException('User does not exist.');
-        }
-        $query = UserNotifications::query()
-            ->where('userNotifications.userId', '=', $userId)
-            ->where('documents.isDeleted', '=', false)
-            ->leftJoin('documents', 'userNotifications.documentId', '=', 'documents.id');
+        try {
+            $userId = Auth::parseToken()->getPayload()->get('userId');
+            if ($userId == null) {
+                throw new RepositoryException('User does not exist.');
+            }
+            $query = UserNotifications::query()
+                ->where('userId', '=', $userId);
 
-        if ($attributes->name) {
-            $query = $query->where(function ($query) use ($attributes) {
-                $query->where('userNotifications.message', 'like', '%' . $attributes->name . '%')
-                    ->orWhere(function ($query) use ($attributes) {
-                        $query->where('documents.name', 'like', '%' . $attributes->name . '%');
-                    });
-            });
-        }
+            $name = $attributes->name ?? null;
+            if ($name) {
+                $query = $query->where('message', 'like', '%' . $name . '%');
+            }
 
-        $count = $query->count();
-        return $count;
+            $count = $query->count();
+            return $count;
+        } catch (\Exception $e) {
+            \Log::error('getUserNotificaionCount error: ' . $e->getMessage());
+            return 0;
+        }
     }
 
     public function markAsRead($request)

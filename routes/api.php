@@ -280,7 +280,6 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::get('/document-token/{documentId}/token', [DocumentTokenController::class, 'getDocumentToken']);
     Route::delete('/document-token/{token}', [DocumentTokenController::class, 'deleteDocumentToken']);
-    Route::post('/reminder/document', [ReminderController::class, 'addReminder']);
     Route::get('/reminder/{id}/my-reminder', [ReminderController::class, 'edit']);
 
     Route::middleware('hasToken:USER_ASSIGN_USER_ROLE')->group(function () {
@@ -323,8 +322,7 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::delete('/reminder/currentuser/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
 
-    Route::get('/user-notification/notification', [UserNotificationController::class, 'index']);
-    Route::get('/user-notification/notifications', [UserNotificationController::class, 'getNotifications']);
+    Route::get('/user-notifications', [UserNotificationController::class, 'getNotifications']);
     Route::post('/user-notification/mark-as-read', [UserNotificationController::class, 'markAsRead']);
     Route::post('/user-notification/mark-all-as-read', [UserNotificationController::class, 'markAllAsRead']);
 
