@@ -317,7 +317,6 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                         'subject' => $r['subject'],
                         'message' => $r['message'],
                         'createdDate' => Carbon::now(),
-                        'documentId' => $r['documentId'],
                     ]);
                 }
                 $model->save();
@@ -362,52 +361,40 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
 
             foreach ($reminderSchedulers as $reminderScheduler) {
 
-                $checkBuilder = UserNotifications::where('userId', $reminderScheduler['userId'])
-                    ->where('message', $reminderScheduler['message'])
-                    ->where('createdDate', '>=', $todayStart)
-                    ->where('createdDate', '<=', $todayEnd);
+                $reminderSchedulerId = $reminderScheduler->id;
 
-                $existingNotification = $checkBuilder->exists();
+                $existingNotification = UserNotifications::where('reminderSchedulerId', $reminderSchedulerId)
+                    ->where('createdDate', '>=', $todayStart)
+                    ->where('createdDate', '<=', $todayEnd)
+                    ->exists();
 
                 if ($existingNotification) {
                     $reminderScheduler->isActive = false;
                     $reminderScheduler->save();
-                    continue;
-                }
-
-                try {
+                } else {
                     $model = UserNotifications::create([
                         'userId' => $reminderScheduler['userId'],
+                        'reminderSchedulerId' => $reminderSchedulerId,
                         'isRead' => 0,
                         'message' => $reminderScheduler['message'],
                     ]);
 
-                    $model->save();
-                } catch (\Illuminate\Database\QueryException $e) {
-                    if ($e->getCode() === 23000) {
-                        $reminderScheduler->isActive = false;
-                        $reminderScheduler->save();
-                        continue;
+                    $user = Users::where('id', $reminderScheduler['userId'])->first();
+
+                    if ($reminderScheduler->isEmailNotification) {
+                        $sendEmailObject = clone  $reminderScheduler;
+                        $sendEmailObject['to_address'] = $user->email;
+
+                        try {
+                            $this->emailRepository->sendEmail($sendEmailObject);
+                        } catch (\Exception $e) {
+                            return $e->getMessage();
+                        }
                     }
-                    throw $e;
+
+                    $reminderScheduler->isActive = false;
+                    $reminderScheduler->save();
                 }
-
-                $user = Users::where('id', $reminderScheduler['userId'])->first();
-
-                if ($reminderScheduler->isEmailNotification) {
-
-                    $sendEmailObject = clone  $reminderScheduler;
-                    $sendEmailObject['to_address'] = $user->email;
-
-                    try {
-                        $this->emailRepository->sendEmail($sendEmailObject);
-                    } catch (\Exception $e) {
-                        return $e->getMessage();
-                    }
-                }
-
-                $reminderScheduler->isActive = false;
-                $reminderScheduler->save();
             }
         }
     }

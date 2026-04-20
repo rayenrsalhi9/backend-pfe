@@ -164,9 +164,13 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
 
     public function getUsersWithClaim($claimType)
     {
-        $currentUserId = Auth::parseToken()->getPayload()->get('userId');
+        try {
+            $currentUserId = Auth::parseToken()->getPayload()->get('userId');
+        } catch (\Exception $e) {
+            $currentUserId = null;
+        }
 
-        return Users::select(['id', 'email', 'firstName', 'lastName', 'isDeleted'])
+        $query = Users::select(['id', 'email', 'firstName', 'lastName', 'isDeleted'])
         ->where(function ($query) use ($claimType) {
             // Users with the claim through their role
             $query->whereHas('userRoles.role.roleClaims', function ($q) use ($claimType) {
@@ -177,8 +181,12 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
                 $q->where('claimType', $claimType);
             });
         })
-        ->where('isDeleted', 0)
-        ->where('id', '!=', $currentUserId)
-        ->get();
+        ->where('isDeleted', 0);
+
+        if ($currentUserId !== null) {
+            $query->where('id', '!=', $currentUserId);
+        }
+
+        return $query->get();
     }
 }

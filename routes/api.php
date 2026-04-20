@@ -60,9 +60,11 @@ Route::controller(AuthController::class)->group(function () {
 Route::get('document/{id}/office-viewer', [DocumentController::class, 'officeviewer']);
 Route::get('document/{id}/officeviewer', [DocumentController::class, 'officeviewer']);
 Route::get('/company-profile', [CompanyProfileController::class, 'getCompanyProfile']);
-Route::post('/company-profile', [CompanyProfileController::class, 'updateCompanyProfile']);
 
 Route::middleware(['auth', 'checkBlacklist'])->group(function () {
+
+    Route::post('/company-profile', [CompanyProfileController::class, 'updateCompanyProfile'])
+        ->middleware('can:updateCompanyProfile');
 
     Route::post('auth/refresh', [AuthController::class, 'refresh']);
 
@@ -75,6 +77,19 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         }
 
         $channelName = $request->input('channel_name');
+
+        if (preg_match('/^App\.Models\.User\.(\d+)$/', $channelName, $matches)) {
+            $channelUserId = (int) $matches[1];
+            if ((int) $user->id !== $channelUserId) {
+                return response()->json(['error' => 'Forbidden'], 403);
+            }
+        } elseif (preg_match('/^conversation\.(\d+)$/', $channelName, $matches)) {
+            $conversationId = $matches[1];
+            $conversation = \App\Models\Conversation::find($conversationId);
+            if (!$conversation || !$conversation->users()->where('user_id', $user->id)->exists()) {
+                return response()->json(['error' => 'Forbidden'], 403);
+            }
+        }
 
         try {
             $pusher = new Pusher(

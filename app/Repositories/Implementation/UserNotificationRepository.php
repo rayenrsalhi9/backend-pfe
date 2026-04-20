@@ -78,7 +78,8 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
             $orderByRaw = $attributes->orderBy ?? 'createdDate desc';
             $orderByArray = explode(' ', $orderByRaw);
             $orderBy = $orderByArray[0] ?? 'createdDate';
-            $direction = $orderByArray[1] ?? 'desc';
+            $directionRaw = $orderByArray[1] ?? 'desc';
+            $direction = in_array(strtolower($directionRaw), ['asc', 'desc']) ? strtolower($directionRaw) : 'desc';
 
             if ($orderBy == 'message') {
                 $query = $query->orderBy('message', $direction);
@@ -103,6 +104,9 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
             }
 
             return $results;
+        } catch (RepositoryException $e) {
+            \Log::error('getUserNotificaions error: ' . $e->getMessage());
+            throw $e;
         } catch (\Exception $e) {
             \Log::error('getUserNotificaions error: ' . $e->getMessage());
             return [];

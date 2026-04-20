@@ -1,6 +1,8 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
@@ -15,9 +17,14 @@ return new class extends Migration
 
     public function down()
     {
-        DB::statement('ALTER TABLE reminders ADD COLUMN documentId VARCHAR(36) NULL');
-        DB::statement('ALTER TABLE reminderSchedulers ADD COLUMN documentId VARCHAR(36) NULL');
-        DB::statement('ALTER TABLE reminders ADD CONSTRAINT reminders_documentid_foreign FOREIGN KEY (documentId) REFERENCES documents(id)');
-        DB::statement('ALTER TABLE reminderSchedulers ADD CONSTRAINT reminderschedulers_documentid_foreign FOREIGN KEY (documentId) REFERENCES documents(id)');
+        Schema::table('reminders', function (Blueprint $table) {
+            $table->uuid('documentId')->nullable();
+            $table->foreign('documentId')->references('id')->on('documents');
+        });
+
+        Schema::table('reminderSchedulers', function (Blueprint $table) {
+            $table->uuid('documentId')->nullable();
+            $table->foreign('documentId')->references('id')->on('documents');
+        });
     }
 };

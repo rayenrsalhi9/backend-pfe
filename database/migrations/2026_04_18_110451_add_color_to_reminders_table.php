@@ -10,8 +10,10 @@ return new class extends Migration
     public function up()
     {
         Schema::table('reminders', function (Blueprint $table) {
-            $table->string('category')->nullable();
+            $table->string('category')->default('normal')->nullable();
         });
+
+        DB::table('reminders')->whereNull('category')->update(['category' => 'normal']);
     }
 
     public function down()
