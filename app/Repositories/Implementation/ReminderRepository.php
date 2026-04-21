@@ -209,9 +209,7 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error adding reminder: ' . $e->getMessage());
-            return response()->json([
-                'message' => 'Error in saving data: ' . $e->getMessage(),
-            ], 409);
+            throw new RepositoryException('Error saving reminder');
         }
     }
 
@@ -262,20 +260,33 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
             $halfYearlyReminders = array_key_exists('halfYearlyReminders', $requestData) ? $requestData['halfYearlyReminders'] : [];
             $quarterlyReminders = array_key_exists('quarterlyReminders', $requestData) ? $requestData['quarterlyReminders'] : [];
 
+            $hasReminderUsers = array_key_exists('reminderUsers', $requestData);
+            $hasDailyReminders = array_key_exists('dailyReminders', $requestData);
+            $hasHalfYearlyReminders = array_key_exists('halfYearlyReminders', $requestData);
+            $hasQuarterlyReminders = array_key_exists('quarterlyReminders', $requestData);
+
             $saved = $model->save();
             $this->resetModel();
 
             $existingReminderUsers = ReminderUsers::where('reminderId', '=', $id)->pluck('userId')->toArray();
 
-            ReminderUsers::where('reminderId', '=', $id)->delete();
-            DailyReminders::where('reminderId', '=', $id)->delete();
-            HalfYearlyReminders::where('reminderId', '=', $id)->delete();
-            QuarterlyReminders::where('reminderId', '=', $id)->delete();
+            if ($hasReminderUsers) {
+                ReminderUsers::where('reminderId', '=', $id)->delete();
+            }
+            if ($hasDailyReminders) {
+                DailyReminders::where('reminderId', '=', $id)->delete();
+            }
+            if ($hasHalfYearlyReminders) {
+                HalfYearlyReminders::where('reminderId', '=', $id)->delete();
+            }
+            if ($hasQuarterlyReminders) {
+                QuarterlyReminders::where('reminderId', '=', $id)->delete();
+            }
 
             $notificationPayloads = [];
             $currentUserId = Auth::parseToken()->getPayload()->get('userId');
 
-            if (!empty($reminderUsers)) {
+            if ($hasReminderUsers) {
                 $model->reminderUsers()->createMany($reminderUsers);
 
                 $newUserIds = array_filter(array_column($reminderUsers, 'userId'), function ($userId) use ($existingReminderUsers, $currentUserId) {
@@ -288,7 +299,9 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
                         'message' => 'Reminder updated: ' . $model->subject,
                     ];
                 }
-            } else {
+            }
+
+            if (!$hasReminderUsers) {
                 $model->reminderUsers()->createMany([['userId' => $currentUserId, 'reminderId' => $model->id]]);
 
                 $notificationPayloads[] = [
@@ -297,13 +310,13 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
                 ];
             }
 
-            if (!empty($dailyReminders)) {
+            if ($hasDailyReminders) {
                 $model->dailyReminders()->createMany($dailyReminders);
             }
-            if (!empty($halfYearlyReminders)) {
+            if ($hasHalfYearlyReminders) {
                 $model->halfYearlyReminders()->createMany($halfYearlyReminders);
             }
-            if (!empty($quarterlyReminders)) {
+            if ($hasQuarterlyReminders) {
                 $model->quarterlyReminders()->createMany($quarterlyReminders);
             }
 

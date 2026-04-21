@@ -92,7 +92,7 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
                 return response()->json(['error' => 'Forbidden'], 403);
             }
         } elseif ($channelName !== $cleanChannelName) {
-            // Has prefix but didn't match patterns - reject
+            return response()->json(['error' => 'Forbidden'], 403);
         } else {
             // No prefix and no match - reject unknown channels
             return response()->json(['error' => 'Forbidden'], 403);

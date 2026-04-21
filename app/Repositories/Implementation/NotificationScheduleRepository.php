@@ -10,6 +10,7 @@ use App\Models\FrequencyEnum;
 use App\Models\Reminders;
 use App\Models\SendEmails;
 use App\Models\UserNotifications;
+use Illuminate\Support\Facades\Log;
 use App\Models\Users;
 use App\Repositories\Implementation\BaseRepository;
 use App\Repositories\Contracts\EmailRepositoryInterface;
@@ -369,7 +370,7 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                     ->exists();
 
                 if (!$existingNotification) {
-                    $model = UserNotifications::create([
+                    UserNotifications::create([
                         'userId' => $reminderScheduler['userId'],
                         'reminderSchedulerId' => $reminderSchedulerId,
                         'isRead' => 0,
