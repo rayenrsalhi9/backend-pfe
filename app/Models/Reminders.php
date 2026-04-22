@@ -27,8 +27,8 @@ class Reminders extends Model
     protected $dates = [];
 
     protected $fillable = [
-        'subject',
-        'message',
+        'eventName',
+        'description',
         'frequency',
         'startDate',
         'endDate',

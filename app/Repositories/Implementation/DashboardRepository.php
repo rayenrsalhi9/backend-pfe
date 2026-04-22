@@ -66,7 +66,7 @@ class DashboardRepository  implements DashboardRepositoryInterface
                     array_push($result, [
                         'Start' => $tempDate,
                         'End' => $tempDate,
-                        'Title' => $r->subject,
+                        'Title' => $r->eventName,
                     ]);
                 }
             }
@@ -121,7 +121,7 @@ class DashboardRepository  implements DashboardRepositoryInterface
                     array_push($result, [
                         'Start' => $tempDate,
                         'End' => $tempDate,
-                        'Title' => $r->subject,
+                        'Title' => $r->eventName,
                     ]);
                 }
             }
@@ -166,7 +166,7 @@ class DashboardRepository  implements DashboardRepositoryInterface
             array_push($result, [
                 'Start' => date('Y-m-d', strtotime("$year-$month-$lastDay")),
                 'End' => date('Y-m-d', strtotime("$year-$month-$lastDay")),
-                'Title' => $r->subject,
+                'Title' => $r->eventName,
             ]);
         }
 
@@ -185,7 +185,7 @@ class DashboardRepository  implements DashboardRepositoryInterface
         $currentQuater = $this->getCurretQuaterlyQuarter($startDate);
 
         $userId = Auth::parseToken()->getPayload()->get('userId');
-        $reminderQuery = Reminders::select(['reminders.id', 'reminders.subject', 'quarterlyReminders.*'])
+        $reminderQuery = Reminders::select(['reminders.id', 'reminders.eventName', 'quarterlyReminders.*'])
             ->join('quarterlyReminders', 'reminders.id', '=', 'quarterlyReminders.reminderId')
             ->where('frequency', '=', FrequencyEnum::Quarterly->value)
             ->where('quarterlyReminders.quarter', '=', $currentQuater)
@@ -217,7 +217,7 @@ class DashboardRepository  implements DashboardRepositoryInterface
             array_push($result, [
                 'Start' => date('Y-m-d', strtotime("$year-$month-$r->day")),
                 'End' => date('Y-m-d', strtotime("$year-$month-$r->day")),
-                'Title' => $r->subject,
+                'Title' => $r->eventName,
             ]);
         }
 
@@ -236,7 +236,7 @@ class DashboardRepository  implements DashboardRepositoryInterface
         $currentQuater = $this->getCurretHalfYearlyQuarter($startDate);
 
         $userId = Auth::parseToken()->getPayload()->get('userId');
-        $reminderQuery = Reminders::select(['reminders.id', 'reminders.subject', 'halfYearlyReminders.*'])
+        $reminderQuery = Reminders::select(['reminders.id', 'reminders.eventName', 'halfYearlyReminders.*'])
             ->join('halfYearlyReminders', 'reminders.id', '=', 'halfYearlyReminders.reminderId')
             ->where('frequency', '=', FrequencyEnum::HalfYearly->value)
             ->where('halfYearlyReminders.quarter', '=', $currentQuater)
@@ -268,7 +268,7 @@ class DashboardRepository  implements DashboardRepositoryInterface
             array_push($result, [
                 'Start' => date('Y-m-d', strtotime("$year-$month-$r->day")),
                 'End' => date('Y-m-d', strtotime("$year-$month-$r->day")),
-                'Title' => $r->subject,
+                'Title' => $r->eventName,
             ]);
         }
 
@@ -311,7 +311,7 @@ class DashboardRepository  implements DashboardRepositoryInterface
             array_push($result, [
                 'Start' => date('Y-m-d', strtotime("$year-$month-$reminderStartDate")),
                 'End' => date('Y-m-d', strtotime("$year-$month-$reminderStartDate")),
-                'Title' => $r->subject,
+                'Title' => $r->eventName,
             ]);
         }
 
@@ -339,7 +339,7 @@ class DashboardRepository  implements DashboardRepositoryInterface
             array_push($result, [
                 'Start' => date('Y-m-d', strtotime("$year-$month-$reminderStartDate")),
                 'End' => date('Y-m-d', strtotime("$year-$month-$reminderStartDate")),
-                'Title' => $r->subject,
+                'Title' => $r->eventName,
             ]);
         }
 

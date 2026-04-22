@@ -77,8 +77,8 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                     'userId' => $users['userId'],
                     'isRead' => 0,
                     'isEmailNotification' => $r['isEmailNotification'],
-                    'subject' => $r['subject'],
-                    'message' => $r['message'],
+                    'subject' => $r['eventName'],
+                    'message' => $r['description'],
                     'createdDate' => Carbon::now(),
                 ]);
             }
@@ -114,8 +114,8 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                     'userId' => $users['userId'],
                     'isRead' => 0,
                     'isEmailNotification' => $r['isEmailNotification'],
-                    'subject' => $r['subject'],
-                    'message' => $r['message'],
+                    'subject' => $r['eventName'],
+                    'message' => $r['description'],
                     'createdDate' => Carbon::now(),
                 ]);
             }
@@ -167,8 +167,8 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                         'userId' => $users['userId'],
                         'isRead' => 0,
                         'isEmailNotification' => $r['isEmailNotification'],
-                        'subject' => $r['subject'],
-                        'message' => $r['message'],
+                        'subject' => $r['eventName'],
+                        'message' => $r['description'],
                         'createdDate' => Carbon::now(),
                     ]);
                 }
@@ -205,8 +205,8 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                     'userId' => $users['userId'],
                     'isRead' => 0,
                     'isEmailNotification' => $r['isEmailNotification'],
-                    'subject' => $r['subject'],
-                    'message' => $r['message'],
+                    'subject' => $r['eventName'],
+                    'message' => $r['description'],
                     'createdDate' => Carbon::now(),
                 ]);
             }
@@ -242,8 +242,8 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                     'userId' => $users['userId'],
                     'isRead' => 0,
                     'isEmailNotification' => $r['isEmailNotification'],
-                    'subject' => $r['subject'],
-                    'message' => $r['message'],
+                    'subject' => $r['eventName'],
+                    'message' => $r['description'],
                     'createdDate' => Carbon::now(),
                 ]);
             }
@@ -279,8 +279,8 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                         'userId' => $users['userId'],
                         'isRead' => 0,
                         'isEmailNotification' => $r['isEmailNotification'],
-                        'subject' => $r['subject'],
-                        'message' => $r['message'],
+                        'subject' => $r['eventName'],
+                        'message' => $r['description'],
                         'createdDate' => Carbon::now(),
                     ]);
                 }
@@ -315,8 +315,8 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                         'userId' => $users['userId'],
                         'isRead' => 0,
                         'isEmailNotification' => $r['isEmailNotification'],
-                        'subject' => $r['subject'],
-                        'message' => $r['message'],
+                        'subject' => $r['eventName'],
+                        'message' => $r['description'],
                         'createdDate' => Carbon::now(),
                     ]);
                 }

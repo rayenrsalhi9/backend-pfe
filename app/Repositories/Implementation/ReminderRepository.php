@@ -34,8 +34,8 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
             'reminders.startDate',
             'reminders.endDate',
             'reminders.id',
-            'reminders.subject',
-            'reminders.message',
+            'reminders.eventName',
+            'reminders.description',
             'reminders.frequency',
             'reminders.category'
         ]);
@@ -44,22 +44,22 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
         $orderBy = $orderByArray[0];
         $direction = $orderByArray[1] ?? 'asc';
 
-        if ($orderBy == 'subject') {
-            $query = $query->orderBy('subject', $direction);
-        } else if ($orderBy == 'message') {
-            $query = $query->orderBy('message', $direction);
+        if ($orderBy == 'eventName') {
+            $query = $query->orderBy('eventName', $direction);
+        } else if ($orderBy == 'description') {
+            $query = $query->orderBy('description', $direction);
         } else if ($orderBy == 'startDate') {
             $query = $query->orderBy('startDate', $direction);
         } else if ($orderBy == 'endDate') {
             $query = $query->orderBy('endDate', $direction);
         }
 
-        if (isset($attributes->subject) && $attributes->subject) {
-            $query = $query->where('subject', 'like', '%' . $attributes->subject . '%');
+if (isset($attributes->eventName) && $attributes->eventName) {
+            $query = $query->where('eventName', 'like', '%' . $attributes->eventName . '%');
         }
 
-        if (isset($attributes->message) && $attributes->message) {
-            $query = $query->where('message', 'like', '%' . $attributes->message . '%');
+if (isset($attributes->description) && $attributes->description) {
+            $query = $query->where('description', 'like', '%' . $attributes->description . '%');
         }
 
         if (isset($attributes->frequency) && $attributes->frequency != '') {
@@ -73,12 +73,12 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
     {
         $query = Reminders::query();
 
-        if (isset($attributes->subject) && $attributes->subject) {
-            $query = $query->where('subject', 'like', '%' . $attributes->subject . '%');
+if (isset($attributes->eventName) && $attributes->eventName) {
+            $query = $query->where('eventName', 'like', '%' . $attributes->eventName . '%');
         }
 
-        if (isset($attributes->message) && $attributes->message) {
-            $query = $query->where('message', 'like', '%' . $attributes->message . '%');
+if (isset($attributes->description) && $attributes->description) {
+            $query = $query->where('description', 'like', '%' . $attributes->description . '%');
         }
 
         if (isset($attributes->frequency) && $attributes->frequency != '') {
@@ -128,8 +128,8 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
             $requestData = is_array($request) ? $request : $request->all();
 
             // Simple Validation
-            if (empty($requestData['subject'])) {
-                throw new \Exception('Subject is required');
+            if (empty($requestData['eventName'])) {
+                throw new \Exception('Event name is required');
             }
             if (empty($requestData['startDate'])) {
                 throw new \Exception('Start date is required');
@@ -161,14 +161,14 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
 
                     $notificationPayloads[] = [
                         'userId' => $user['userId'],
-                        'message' => 'New reminder: ' . $requestData['subject'],
+                        'message' => 'New reminder: ' . $requestData['eventName'],
                     ];
                 }
 
                 if (!isset($uniqueUserIds[$currentUserId])) {
                     $notificationPayloads[] = [
                         'userId' => $currentUserId,
-                        'message' => 'You created a reminder: ' . $requestData['subject'],
+                        'message' => 'You created a reminder: ' . $requestData['eventName'],
                     ];
                 }
             } else {
@@ -176,7 +176,7 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
 
                 $notificationPayloads[] = [
                     'userId' => $currentUserId,
-                    'message' => 'You created a reminder: ' . $requestData['subject'],
+                    'message' => 'You created a reminder: ' . $requestData['eventName'],
                 ];
             }
 
@@ -223,15 +223,15 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
             $requestData = is_array($request) ? $request : $request->all();
 
             // Simple Validation
-            if (isset($requestData['subject']) && empty($requestData['subject'])) {
-                throw new \Exception('Subject cannot be empty');
+            if (isset($requestData['eventName']) && empty($requestData['eventName'])) {
+                throw new \Exception('Event name cannot be empty');
             }
 
-            if (array_key_exists('subject', $requestData)) {
-                $model->subject = $requestData['subject'];
+            if (array_key_exists('eventName', $requestData)) {
+                $model->eventName = $requestData['eventName'];
             }
-            if (array_key_exists('message', $requestData)) {
-                $model->message = $requestData['message'];
+            if (array_key_exists('description', $requestData)) {
+                $model->description = $requestData['description'];
             }
             if (array_key_exists('frequency', $requestData)) {
                 $model->frequency = $requestData['frequency'];
@@ -296,7 +296,7 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
                 foreach ($newUserIds as $userId) {
                     $notificationPayloads[] = [
                         'userId' => $userId,
-                        'message' => 'Reminder updated: ' . $model->subject,
+                        'message' => 'Reminder updated: ' . $model->eventName,
                     ];
                 }
             }
@@ -306,7 +306,7 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
 
                 $notificationPayloads[] = [
                     'userId' => $currentUserId,
-                    'message' => 'Reminder updated: ' . $model->subject,
+                    'message' => 'Reminder updated: ' . $model->eventName,
                 ];
             }
 
@@ -366,8 +366,8 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
             'reminders.startDate',
             'reminders.endDate',
             'reminders.id',
-            'reminders.subject',
-            'reminders.message',
+            'reminders.eventName',
+            'reminders.description',
             'reminders.frequency',
             'reminders.category'
         ])
@@ -385,22 +385,22 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
         $orderBy = $orderByArray[0];
         $direction = $orderByArray[1] ?? 'asc';
 
-        if ($orderBy == 'subject') {
-            $query = $query->orderBy('subject', $direction);
-        } else if ($orderBy == 'message') {
-            $query = $query->orderBy('message', $direction);
+        if ($orderBy == 'eventName') {
+            $query = $query->orderBy('eventName', $direction);
+        } else if ($orderBy == 'description') {
+            $query = $query->orderBy('description', $direction);
         } else if ($orderBy == 'startDate') {
             $query = $query->orderBy('startDate', $direction);
         } else if ($orderBy == 'endDate') {
             $query = $query->orderBy('endDate', $direction);
         }
 
-        if (isset($attributes->subject) && $attributes->subject) {
-            $query = $query->where('subject', 'like', '%' . $attributes->subject . '%');
+if (isset($attributes->eventName) && $attributes->eventName) {
+            $query = $query->where('eventName', 'like', '%' . $attributes->eventName . '%');
         }
 
-        if (isset($attributes->message) && $attributes->message) {
-            $query = $query->where('message', 'like', '%' . $attributes->message . '%');
+if (isset($attributes->description) && $attributes->description) {
+            $query = $query->where('description', 'like', '%' . $attributes->description . '%');
         }
 
         if (isset($attributes->frequency) && $attributes->frequency != '') {
@@ -425,13 +425,14 @@ class ReminderRepository extends BaseRepository implements ReminderRepositoryInt
                     });
             });
 
-        if (isset($attributes->subject) && $attributes->subject) {
-            $query = $query->where('subject', 'like', '%' . $attributes->subject . '%');
+if (isset($attributes->eventName) && $attributes->eventName) {
+            $query = $query->where('eventName', 'like', '%' . $attributes->eventName . '%');
         }
 
-        if (isset($attributes->message) && $attributes->message) {
-            $query = $query->where('message', 'like', '%' . $attributes->message . '%');
+if (isset($attributes->description) && $attributes->description) {
+            $query = $query->where('description', 'like', '%' . $attributes->description . '%');
         }
+
         if (isset($attributes->frequency) && $attributes->frequency != '') {
             $query = $query->where('frequency', $attributes->frequency);
         }
