@@ -364,34 +364,46 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
 
                 $reminderSchedulerId = $reminderScheduler->id;
 
-                $existingNotification = UserNotifications::where('reminderSchedulerId', $reminderSchedulerId)
-                    ->where('createdDate', '>=', $todayStart)
-                    ->where('createdDate', '<=', $todayEnd)
-                    ->exists();
+                try {
+                    DB::beginTransaction();
 
-                if (!$existingNotification) {
-                    UserNotifications::create([
-                        'userId' => $reminderScheduler['userId'],
-                        'reminderSchedulerId' => $reminderSchedulerId,
-                        'isRead' => 0,
-                        'message' => $reminderScheduler['message'],
-                    ]);
+                    $existingNotification = UserNotifications::where('reminderSchedulerId', $reminderSchedulerId)
+                        ->where('createdDate', '>=', $todayStart)
+                        ->where('createdDate', '<=', $todayEnd)
+                        ->lockForUpdate()
+                        ->exists();
+
+                    if (!$existingNotification) {
+                        UserNotifications::create([
+                            'userId' => $reminderScheduler['userId'],
+                            'reminderSchedulerId' => $reminderSchedulerId,
+                            'isRead' => 0,
+                            'message' => $reminderScheduler['message'],
+                        ]);
+                    }
+
+                    DB::commit();
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    Log::error('Error creating notification: ' . $e->getMessage());
                 }
 
                 $user = Users::where('id', $reminderScheduler['userId'])->first();
 
-                if ($reminderScheduler->isEmailNotification) {
+                if ($reminderScheduler->isEmailNotification && !empty($user->email)) {
                     $sendEmailObject = clone  $reminderScheduler;
                     $sendEmailObject['to_address'] = $user->email;
 
                     try {
                         $this->emailRepository->sendEmail($sendEmailObject);
+                        $reminderScheduler->isActive = false;
                     } catch (\Exception $e) {
                         Log::error('Email send failed for reminder scheduler: ' . $e->getMessage());
                     }
+                } else {
+                    $reminderScheduler->isActive = false;
                 }
 
-                $reminderScheduler->isActive = false;
                 $reminderScheduler->save();
             }
         }
