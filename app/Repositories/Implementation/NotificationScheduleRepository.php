@@ -2,7 +2,6 @@
 
 namespace App\Repositories\Implementation;
 
-use App\Models\Documents;
 use App\Models\ReminderSchedulers;
 use App\Repositories\Contracts\NotificationScheduleInterface;
 use App\Repositories\Implementation\ConnectionMappingRepository;
@@ -11,10 +10,11 @@ use App\Models\FrequencyEnum;
 use App\Models\Reminders;
 use App\Models\SendEmails;
 use App\Models\UserNotifications;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use App\Models\Users;
 use App\Repositories\Implementation\BaseRepository;
 use App\Repositories\Contracts\EmailRepositoryInterface;
-use Illuminate\Support\Facades\Storage;
 
 
 //use Your Model
@@ -78,10 +78,9 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                     'userId' => $users['userId'],
                     'isRead' => 0,
                     'isEmailNotification' => $r['isEmailNotification'],
-                    'subject' => $r['subject'],
-                    'message' => $r['message'],
+                    'subject' => $r['eventName'],
+                    'message' => $r['description'],
                     'createdDate' => Carbon::now(),
-                    'documentId' => $r['documentId'],
                 ]);
             }
             $model->save();
@@ -116,17 +115,16 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                     'userId' => $users['userId'],
                     'isRead' => 0,
                     'isEmailNotification' => $r['isEmailNotification'],
-                    'subject' => $r['subject'],
-                    'message' => $r['message'],
+                    'subject' => $r['eventName'],
+                    'message' => $r['description'],
                     'createdDate' => Carbon::now(),
-                    'documentId' => $r['documentId'],
                 ]);
             }
             $model->save();
         }
     }
 
-    public function monthyReminder()
+    public function monthlyReminder()
     {
         $currentDate = Carbon::now();  //Carbon::create(2023, 02, 27);
 
@@ -170,10 +168,9 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                         'userId' => $users['userId'],
                         'isRead' => 0,
                         'isEmailNotification' => $r['isEmailNotification'],
-                        'subject' => $r['subject'],
-                        'message' => $r['message'],
+                        'subject' => $r['eventName'],
+                        'message' => $r['description'],
                         'createdDate' => Carbon::now(),
-                        'documentId' => $r['documentId'],
                     ]);
                 }
                 $model->save();
@@ -209,10 +206,9 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                     'userId' => $users['userId'],
                     'isRead' => 0,
                     'isEmailNotification' => $r['isEmailNotification'],
-                    'subject' => $r['subject'],
-                    'message' => $r['message'],
+                    'subject' => $r['eventName'],
+                    'message' => $r['description'],
                     'createdDate' => Carbon::now(),
-                    'documentId' => $r['documentId'],
                 ]);
             }
             $model->save();
@@ -247,10 +243,9 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                     'userId' => $users['userId'],
                     'isRead' => 0,
                     'isEmailNotification' => $r['isEmailNotification'],
-                    'subject' => $r['subject'],
-                    'message' => $r['message'],
+                    'subject' => $r['eventName'],
+                    'message' => $r['description'],
                     'createdDate' => Carbon::now(),
-                    'documentId' => $r['documentId'],
                 ]);
             }
             $model->save();
@@ -285,10 +280,9 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                         'userId' => $users['userId'],
                         'isRead' => 0,
                         'isEmailNotification' => $r['isEmailNotification'],
-                        'subject' => $r['subject'],
-                        'message' => $r['message'],
+                        'subject' => $r['eventName'],
+                        'message' => $r['description'],
                         'createdDate' => Carbon::now(),
-                        'documentId' => $r['documentId'],
                     ]);
                 }
                 $model->save();
@@ -322,10 +316,9 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                         'userId' => $users['userId'],
                         'isRead' => 0,
                         'isEmailNotification' => $r['isEmailNotification'],
-                        'subject' => $r['subject'],
-                        'message' => $r['message'],
+                        'subject' => $r['eventName'],
+                        'message' => $r['description'],
                         'createdDate' => Carbon::now(),
-                        'documentId' => $r['documentId'],
                     ]);
                 }
                 $model->save();
@@ -356,11 +349,13 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
     public function reminderSchedulerServiceQuery()
     {
         $currentDate = Carbon::now();
+        $todayStart = $currentDate->copy()->startOfDay();
+        $todayEnd = $currentDate->copy()->endOfDay();
 
         $reminderSchedulers = ReminderSchedulers::select(['reminderSchedulers.*'])
             ->where('isActive', '=', 1)
             ->where('duration', '<=', $currentDate)
-            ->orderBy('duration', 'DESC')
+            ->orderBy('duration', 'ASC')
             ->take(10)
             ->get();
 
@@ -368,44 +363,48 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
 
             foreach ($reminderSchedulers as $reminderScheduler) {
 
-                $model = UserNotifications::create([
-                    'userId' => $reminderScheduler['userId'],
-                    'isRead' => 0,
-                    'message' => $reminderScheduler['message'],
-                    'documentId' => $reminderScheduler['documentId']
-                ]);
+                $reminderSchedulerId = $reminderScheduler->id;
 
-                // $model->createdDate = Carbon::now();
-                // $model->modifiedDate = Carbon::now();
+                try {
+                    DB::beginTransaction();
 
-                $model->save();
+                    $existingNotification = UserNotifications::where('reminderSchedulerId', $reminderSchedulerId)
+                        ->where('createdDate', '>=', $todayStart)
+                        ->where('createdDate', '<=', $todayEnd)
+                        ->lockForUpdate()
+                        ->exists();
+
+                    if (!$existingNotification) {
+                        UserNotifications::create([
+                            'userId' => $reminderScheduler['userId'],
+                            'reminderSchedulerId' => $reminderSchedulerId,
+                            'isRead' => 0,
+                            'message' => $reminderScheduler['message'],
+                        ]);
+                    }
+
+                    DB::commit();
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    Log::error('Error creating notification: ' . $e->getMessage());
+                }
 
                 $user = Users::where('id', $reminderScheduler['userId'])->first();
 
-                if ($reminderScheduler->isEmailNotification) {
-
+                if ($reminderScheduler->isEmailNotification && !empty($user->email)) {
                     $sendEmailObject = clone  $reminderScheduler;
-
-                    if ($reminderScheduler['documentId'] != null) {
-                        $document =  $this->getDocument($reminderScheduler['documentId']);
-                        $fileupload = $document->url;
-                        if (Storage::disk('local')->exists($fileupload)) {
-                            $ext = pathinfo($document->url, PATHINFO_EXTENSION);
-                            $sendEmailObject['path'] = Storage::path($fileupload);
-                            $sendEmailObject['mime_type'] = Storage::mimeType($fileupload);
-                            $sendEmailObject['file_name'] = $document->name . '.' . $ext;
-                        }
-                    }
                     $sendEmailObject['to_address'] = $user->email;
 
                     try {
                         $this->emailRepository->sendEmail($sendEmailObject);
+                        $reminderScheduler->isActive = false;
                     } catch (\Exception $e) {
-                        return $e->getMessage();
+                        Log::error('Email send failed for reminder scheduler: ' . $e->getMessage());
                     }
+                } else {
+                    $reminderScheduler->isActive = false;
                 }
 
-                $reminderScheduler->isActive = false;
                 $reminderScheduler->save();
             }
         }
@@ -421,19 +420,8 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
 
         if ($sendEmailSchduler->count() > 0) {
             foreach ($sendEmailSchduler as $sendEmail) {
-                if (!empty($sendEmail->email)  && $sendEmail->documentId != null) {
-                    $document =  $this->getDocument($sendEmail->documentId);
-
-                    $fileupload = $document->url;
-
-                    $sendEmailObject = clone  $sendEmail;
-
-                    if (Storage::disk('local')->exists($fileupload)) {
-                        $ext = pathinfo($document->url, PATHINFO_EXTENSION);
-                        $sendEmailObject['path'] = Storage::path($fileupload);
-                        $sendEmailObject['mime_type'] = Storage::mimeType($fileupload);
-                        $sendEmailObject['file_name'] = $document->name . '.' . $ext;
-                    }
+                if (!empty($sendEmail->email)) {
+                    $sendEmailObject = clone $sendEmail;
 
                     try {
                         $sendEmailObject['to_address'] = $sendEmail->email;
@@ -443,16 +431,9 @@ class NotificationScheduleRepository extends BaseRepository implements Notificat
                         echo 'exception: ' . $e->getMessage();
                     }
                 }
-                // }
                 $sendEmail->isSend = true;
                 $sendEmail->save();
             }
         }
-    }
-
-    private function getDocument($documentId)
-    {
-        $doc = Documents::where('id', $documentId)->first();
-        return $doc;
     }
 }

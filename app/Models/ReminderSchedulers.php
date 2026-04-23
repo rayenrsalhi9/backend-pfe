@@ -14,7 +14,7 @@ class ReminderSchedulers extends Model
     protected  $table = 'reminderSchedulers';
 
     protected $fillable = [
-        'frequency', 'isActive', 'duration', 'documentId', 'isEmailNotification', 'isRead',
+        'frequency', 'isActive', 'duration', 'isEmailNotification', 'isRead',
         'createdDate', 'userId', 'subject', 'message'
     ];
 
@@ -22,11 +22,6 @@ class ReminderSchedulers extends Model
         'isRead' => 'boolean',
         'duration' => 'date'
     ];
-
-    public function documents()
-    {
-        return $this->belongsTo(Documents::class, 'documentId');
-    }
 
     protected static function boot()
     {

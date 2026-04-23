@@ -4,17 +4,17 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use App\Repositories\Contracts\NotificationScheduleInterface;
 
-class MonthyReminderCommand extends Command
+class MonthlyReminderCommand extends Command
 {
     /**
      * @var string
      */
-    protected $signature = 'notification:monthy';
+    protected $signature = 'notification:monthly';
 
     /**
      * @var string
      */
-    protected $description = 'Monthy Notification Handler.';
+    protected $description = 'Monthly Notification Handler.';
 
     /**
      * @var NotificationScheduleInterface
@@ -32,7 +32,7 @@ class MonthyReminderCommand extends Command
 
     public function handle()
     {
-        $this->notificationRepository->monthyReminder();
-        $this->info('Monthy Reminder...');
+        $this->notificationRepository->monthlyReminder();
+        $this->info('Monthly Reminder...');
     }
 }

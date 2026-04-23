@@ -2,13 +2,13 @@
 
 namespace App\Models;
 
-enum FrequencyEnum: int
+enum FrequencyEnum: string
 {
-    case Daily = 0;
-    case Weekly = 1;
-    case Monthly = 2;
-    case Quarterly = 3;
-    case HalfYearly = 4;
-    case Yearly = 5;
-    case OneTime = 6;
+    case Daily = 'daily';
+    case Weekly = 'weekly';
+    case Monthly = 'monthly';
+    case Quarterly = 'quarterly';
+    case HalfYearly = 'half_yearly';
+    case Yearly = 'yearly';
+    case OneTime = 'once';
 }

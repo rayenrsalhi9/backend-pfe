@@ -7,7 +7,7 @@ namespace App\Repositories\Contracts;
 interface NotificationScheduleInterface
 {
     public function dailyReminder();
-    public function monthyReminder();
+    public function monthlyReminder();
     public function weeklyReminder();
     public function quarterlyReminder();
     public function halfYearlyReminder();

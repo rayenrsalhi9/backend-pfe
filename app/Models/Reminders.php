@@ -20,18 +20,24 @@ class Reminders extends Model
     const CREATED_AT = 'createdDate';
     const UPDATED_AT = 'modifiedDate';
 
-    protected $dates = ['startDate', 'endDate'];
-
-    protected $fillable = [
-        'subject', 'message', 'frequency', 'startDate', 'endDate', 'dayOfWeek',
-        'isRepeated', 'isEmailNotification', 'documentId', 'createdBy',
-        'modifiedBy', 'isDeleted'
+    protected $casts = [
+        'frequency' => FrequencyEnum::class,
     ];
 
-    public function documents()
-    {
-        return $this->belongsTo(Documents::class, 'documentId');
-    }
+    protected $fillable = [
+        'eventName',
+        'description',
+        'frequency',
+        'startDate',
+        'endDate',
+        'dayOfWeek',
+        'isRepeated',
+        'isEmailNotification',
+        'createdBy',
+        'modifiedBy',
+        'isDeleted',
+        'category'
+    ];
 
     public function reminderUsers()
     {
@@ -40,28 +46,28 @@ class Reminders extends Model
 
     public function dailyReminders()
     {
-        return $this->hasMany(DailyReminders::class,'reminderId');
+        return $this->hasMany(DailyReminders::class, 'reminderId');
     }
 
     public function remindernotifications()
     {
-        return $this->hasMany(ReminderNotifications::class,'reminderId');
+        return $this->hasMany(ReminderNotifications::class, 'reminderId');
     }
 
     public function halfYearlyReminders()
     {
-        return $this->hasMany(HalfYearlyReminders::class,'reminderId');
+        return $this->hasMany(HalfYearlyReminders::class, 'reminderId');
     }
     public function quarterlyReminders()
     {
-        return $this->hasMany(QuarterlyReminders::class,'reminderId');
+        return $this->hasMany(QuarterlyReminders::class, 'reminderId');
     }
 
 
     protected static function boot()
     {
         parent::boot();
-        
+
         static::creating(function (Model $model) {
             $userId = Auth::parseToken()->getPayload()->get('userId');
             $model->createdBy = $userId;

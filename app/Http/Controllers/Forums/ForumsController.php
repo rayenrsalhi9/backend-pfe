@@ -24,6 +24,10 @@ class ForumsController extends Controller
         $banner = $request->banner;
 
         $query = Forums::orderBy('created_at', 'DESC')
+            ->with(['creator' => function ($q) {
+                $q->select('users.id', 'users.firstName', 'users.lastName', 'users.userName', 'users.avatar', 'users.isDeleted')->withoutGlobalScope('isDeleted');
+            }])
+            ->with('category')
             ->withCount(['reactions', 'comments'])
             ->when($limit, function ($query) use ($limit) {
                 return $query->take($limit);
