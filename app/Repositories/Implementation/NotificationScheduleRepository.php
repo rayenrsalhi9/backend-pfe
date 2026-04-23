@@ -11,6 +11,7 @@ use App\Models\Reminders;
 use App\Models\SendEmails;
 use App\Models\UserNotifications;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use App\Models\Users;
 use App\Repositories\Implementation\BaseRepository;
 use App\Repositories\Contracts\EmailRepositoryInterface;

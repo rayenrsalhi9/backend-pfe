@@ -208,8 +208,8 @@ if (isset($attributes->description) && $attributes->description) {
             return $saved;
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error adding reminder: ' . $e->getMessage());
-            throw new RepositoryException('Error saving reminder');
+            Log::error($e);
+            throw new RepositoryException('Error saving reminder: ' . $e->getMessage());
         }
     }
 
@@ -339,12 +339,12 @@ if (isset($attributes->description) && $attributes->description) {
             return $this->parseResult($model);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             DB::rollBack();
-            Log::error('Error updating reminder: ' . $e->getMessage());
+            Log::error($e);
             throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error updating reminder: ' . $e->getMessage());
-            throw new RepositoryException('Error in saving data: ' . $e->getMessage());
+            Log::error($e);
+            throw new RepositoryException('Error saving reminder');
         }
     }
 

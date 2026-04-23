@@ -24,8 +24,6 @@ class Reminders extends Model
         'frequency' => FrequencyEnum::class,
     ];
 
-    protected $dates = [];
-
     protected $fillable = [
         'eventName',
         'description',
