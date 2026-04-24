@@ -37,6 +37,6 @@ trait Uuids
      */
     public function getKeyType()
     {
-        return 'st  ring';
+        return 'string';
     }
 }

@@ -461,7 +461,7 @@ Route::prefix('response-audit')->controller(ResponseAuditTrailController::class)
 
 Route::prefix('surveys')->controller(SurverysController::class)->group(function () {
     Route::get('', 'getAll');
-    Route::get('get/{id}', 'getOne');
+    Route::middleware(['auth'])->get('get/{id}', 'getOne');
     Route::get('latest', 'getLast');
     Route::get('statistics/{id}', 'statistics');
     Route::middleware(['auth'])->put('update/{id}', 'update');
