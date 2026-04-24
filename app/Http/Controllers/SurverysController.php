@@ -44,23 +44,38 @@ class SurverysController extends Controller
             $query->whereBetween('created_at', [$startDate, $endDate]);
         }
 
-        $survey = $query->get();
-        return response()->json($survey, 200);
+        $surveys = $query->get()->filter(function ($survey) use ($user) {
+            if (!$survey) return false;
+            if ($survey->privacy !== 'private') return true;
+            if (!$user) return false;
+            $allowedUsers = is_array($survey->users) ? $survey->users : json_decode($survey->users ?? '[]', true);
+            return in_array($user->id, $allowedUsers);
+        })->values();
+
+        return response()->json($surveys, 200);
     }
 
     function getLast()
     {
         $user = Auth::user();
 
-        $query = Surveys::where('closed', false)->latest();
-
-        if ($user) {
-            $query->whereDoesntHave('answers', function ($q) use ($user) {
-                $q->where('user_id', $user->id);
-            });
+        if (!$user) {
+            return response()->json(null, 200);
         }
 
+        $query = Surveys::where('closed', false)->latest()
+            ->whereDoesntHave('answers', function ($q) use ($user) {
+                $q->where('user_id', $user->id);
+            });
+
         $survey = $query->first();
+
+        if ($survey && $survey->privacy === 'private') {
+            $allowedUsers = is_array($survey->users) ? $survey->users : json_decode($survey->users ?? '[]', true);
+            if (!in_array($user->id, $allowedUsers)) {
+                return response()->json(null, 200);
+            }
+        }
 
         return response()->json($survey, 200);
     }
@@ -68,6 +83,10 @@ class SurverysController extends Controller
     function getOne($id)
     {
         $survey = Surveys::where('id', $id)->with('creator')->first();
+        
+        if ($survey && $survey->users) {
+            $survey->users = is_array($survey->users) ? $survey->users : json_decode($survey->users, true);
+        }
 
         return response()->json($survey, 200);
     }
@@ -110,6 +129,18 @@ class SurverysController extends Controller
             $survey->end_date = $request->endDate;
             $survey->save();
 
+            if ($request->private && $request->users) {
+                $users = is_array($request->users) ? $request->users : json_decode($request->users, true);
+                if (!in_array($user->id, $users)) {
+                    $users[] = $user->id;
+                }
+                $survey->users = $users;
+                $survey->save();
+            } elseif ($request->private) {
+                $survey->users = [$user->id];
+                $survey->save();
+            }
+
             $response = $survey->load('creator');
 
             return response()->json($response, 200);
@@ -123,6 +154,17 @@ class SurverysController extends Controller
 
         $survey = Surveys::where('id', $id)->first();
         $user = Auth::user();
+        
+        if (!$survey) {
+            return response()->json(['message' => 'Survey not found'], 404);
+        }
+        
+        if ($survey->privacy === 'private') {
+            $allowedUsers = is_array($survey->users) ? $survey->users : json_decode($survey->users ?? '[]', true);
+            if (!in_array($user->id, $allowedUsers)) {
+                return response()->json(['message' => 'You are not authorized to answer this survey'], 403);
+            }
+        }
 
         $answerExist = SurveyAnswers::where(['survey_id' => $survey->id, 'user_id' => $user->id])->first();
         if ($answerExist)
@@ -154,9 +196,20 @@ class SurverysController extends Controller
             $survey->privacy = $request->private ? 'private' : 'public';
             $survey->blog = $request->blog;
             $survey->forum = $request->forum;
-            $survey->created_by = $user->id;
             $survey->start_date = $request->startDate;
             $survey->end_date = $request->endDate;
+            $survey->save();
+
+            if ($request->private && $request->users) {
+                $users = is_array($request->users) ? $request->users : json_decode($request->users, true);
+                $creatorId = $survey->created_by;
+                if ($creatorId && !in_array($creatorId, $users)) {
+                    $users[] = $creatorId;
+                }
+                $survey->users = $users;
+            } else {
+                $survey->users = null;
+            }
             $survey->save();
 
             $response = $survey->load('creator');

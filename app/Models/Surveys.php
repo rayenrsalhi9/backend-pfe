@@ -24,7 +24,7 @@ class Surveys extends Model
      *
      * @var array
      */
-    protected $fillable = ['title','type','privacy','created_by','start_date','end_date','blog','forum','closed'];
+    protected $fillable = ['title','type','privacy','created_by','start_date','end_date','blog','forum','closed','users'];
 
     public function creator()
     {
