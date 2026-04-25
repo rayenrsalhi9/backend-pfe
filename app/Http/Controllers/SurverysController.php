@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Carbon\Carbon;
 use App\Models\Surveys;
+use App\Http\Requests\StoreSurveyRequest;
+use App\Http\Requests\UpdateSurveyRequest;
 use Illuminate\Http\Request;
 use App\Models\SurveyAnswers;
 use Illuminate\Support\Facades\DB;
@@ -116,18 +118,13 @@ class SurverysController extends Controller
 
     function statistics($id)
     {
-        $user = Auth::user();
-
-        if (!$user) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-
         $survey = Surveys::where('id', $id)->first();
 
         if (!$survey) {
             return response()->json(['message' => 'Survey not found'], 404);
         }
 
+        $user = Auth::user();
         $isPublic = $survey->privacy !== 'private';
         $isCreator = $survey->created_by === $user->id;
         $isAllowedUser = in_array($user->id, $survey->users ?? []);
@@ -153,7 +150,7 @@ class SurverysController extends Controller
         }
     }
 
-    function create(Request $request)
+    function create(StoreSurveyRequest $request)
     {
         $user = Auth::user();
 
@@ -161,17 +158,8 @@ class SurverysController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        $allowedTypes = ['simple', 'rating', 'satisfaction'];
-        $type = $request->type;
-        if ($type && !in_array($type, $allowedTypes)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid survey type. Allowed: ' . implode(', ', $allowedTypes)
-            ], 422);
-        }
-
         $title = $request->title;
-        if ($title && strlen($title) > 255) {
+        if ($title && mb_strlen($title, 'UTF-8') > 255) {
             return response()->json([
                 'success' => false,
                 'message' => 'Title must not exceed 255 characters'
@@ -249,8 +237,9 @@ class SurverysController extends Controller
         }
 
         if ($survey->privacy === 'private') {
+            $isCreator = $survey->created_by === $user->id;
             $allowedUsers = is_array($survey->users) ? $survey->users : json_decode($survey->users ?? '[]', true);
-            if (!in_array($user->id, $allowedUsers)) {
+            if (!$isCreator && !in_array($user->id, $allowedUsers)) {
                 return response()->json(['message' => 'You are not authorized to answer this survey'], 403);
             }
         }
@@ -272,16 +261,9 @@ class SurverysController extends Controller
         return response()->json($response, 200);
     }
 
-    function update($id, Request $request)
+    function update($id, UpdateSurveyRequest $request)
     {
         $user = Auth::user();
-
-        if (!$this->hasPermission('SURVEY_EDIT_SURVEY') && !$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'You do not have permission to edit surveys.'
-            ], 403);
-        }
 
         $survey = Surveys::where('id', $id)->first();
 
@@ -302,17 +284,8 @@ class SurverysController extends Controller
             ], 403);
         }
 
-        $allowedTypes = ['simple', 'rating', 'satisfaction'];
-        $type = $request->type;
-        if ($type && !in_array($type, $allowedTypes)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid survey type. Allowed: ' . implode(', ', $allowedTypes)
-            ], 422);
-        }
-
         $title = $request->title;
-        if ($title && strlen($title) > 255) {
+        if ($title && mb_strlen($title, 'UTF-8') > 255) {
             return response()->json([
                 'success' => false,
                 'message' => 'Title must not exceed 255 characters'
@@ -333,37 +306,50 @@ class SurverysController extends Controller
         }
 
         try {
-            $isPrivate = $request->privacy === 'private';
+            if ($request->filled('title')) {
+                $survey->title = $request->title;
+            }
+            if ($request->filled('type')) {
+                $survey->type = $request->type;
+            }
 
-            $survey->title = $request->title;
-            $survey->type = $request->type;
-            $survey->privacy = $isPrivate ? 'private' : 'public';
-            $survey->blog = $request->blog;
-            $survey->forum = $request->forum;
-            $survey->start_date = $request->startDate;
-            $survey->end_date = $request->endDate;
+            if ($request->has('privacy')) {
+                $isPrivate = $request->privacy === 'private';
+                $survey->privacy = $isPrivate ? 'private' : 'public';
 
-            if ($isPrivate) {
-                $users = $request->users ?? [];
-                if (is_string($users)) {
-                    $users = json_decode($users, true) ?? [];
-                }
-                if (!is_array($users)) {
-                    $users = [];
-                }
-                $users = array_unique($users);
-                $users = array_values(array_filter($users));
+                if ($isPrivate) {
+                    $users = $request->users ?? [];
+                    if (is_string($users)) {
+                        $users = json_decode($users, true) ?? [];
+                    }
+                    if (!is_array($users)) {
+                        $users = [];
+                    }
+                    $users = array_unique($users);
+                    $users = array_values(array_filter($users));
 
-                if (!in_array($survey->created_by, $users)) {
-                    $users[] = $survey->created_by;
-                }
-                if ($user && !in_array($user->id, $users)) {
-                    $users[] = $user->id;
-                }
+                    if (!in_array($survey->created_by, $users)) {
+                        $users[] = $survey->created_by;
+                    }
+                    if ($user && !in_array($user->id, $users)) {
+                        $users[] = $user->id;
+                    }
 
-                $survey->users = array_values($users);
-            } else {
-                $survey->users = null;
+                    $survey->users = array_values($users);
+                }
+            }
+
+            if ($request->has('blog')) {
+                $survey->blog = $request->boolean('blog', $survey->blog);
+            }
+            if ($request->has('forum')) {
+                $survey->forum = $request->boolean('forum', $survey->forum);
+            }
+            if ($request->filled('startDate')) {
+                $survey->start_date = $request->startDate;
+            }
+            if ($request->filled('endDate')) {
+                $survey->end_date = $request->endDate;
             }
 
             $survey->save();

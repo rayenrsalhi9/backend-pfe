@@ -30,7 +30,9 @@ class SurveysFactory extends Factory
     {
         return $this->state(fn(array $attributes) => [
             'privacy' => 'private',
-            'users' => [],
+            'users' => isset($attributes['creator_id'])
+                ? [$attributes['creator_id']]
+                : (isset($attributes['user_id']) ? [$attributes['user_id']] : []),
         ]);
     }
 

@@ -171,7 +171,7 @@ class SurveyTest extends TestCase
         $this->assertEquals(3, count($response->json()));
     }
 
-public function test_update_requires_permission_or_ownership()
+    public function test_update_requires_permission_or_ownership()
     {
         $user = Users::factory()->create();
         $owner = Users::factory()->create();
@@ -503,5 +503,46 @@ public function test_update_requires_permission_or_ownership()
             ]);
 
         $response->assertStatus(422);
+    }
+
+    public function test_update_preserves_privacy_and_users_when_not_provided()
+    {
+        $owner = Users::factory()->create();
+        $user1 = Users::factory()->create();
+        $user2 = Users::factory()->create();
+
+        $survey = Surveys::factory()->create([
+            'created_by' => $owner->id,
+            'privacy' => 'private',
+            'users' => [$owner->id, $user1->id, $user2->id],
+        ]);
+
+        $originalUsers = $survey->users;
+        $originalPrivacy = $survey->privacy;
+
+        $response = $this->actingAsUser($owner)
+            ->putJson("/api/surveys/update/{$survey->id}", [
+                'title' => 'Updated Title',
+            ]);
+
+        $response->assertStatus(200);
+
+        $survey->refresh();
+        $this->assertEquals('private', $survey->privacy);
+        $this->assertEquals($originalPrivacy, $survey->privacy);
+        $this->assertEquals($originalUsers, $survey->users);
+    }
+
+    public function test_create_requires_type_field()
+    {
+        $user = Users::factory()->create();
+
+        $response = $this->actingAsUser($user)
+            ->postJson('/api/surveys/create', [
+                'title' => 'Test Survey',
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonStructure(['errors' => ['type']]);
     }
 }
