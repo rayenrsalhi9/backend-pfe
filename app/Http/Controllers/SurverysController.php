@@ -99,7 +99,10 @@ class SurverysController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        $survey = Surveys::where('id', $id)->with('creator')->first();
+        $survey = Surveys::where('id', $id)
+            ->with('creator')
+            ->withCount('answers')
+            ->first();
 
         if (!$survey) {
             return response()->json(['message' => 'Survey not found'], 404);
@@ -125,11 +128,10 @@ class SurverysController extends Controller
         }
 
         $user = Auth::user();
-        $isPublic = $survey->privacy !== 'private';
         $isCreator = $survey->created_by === $user->id;
-        $isAllowedUser = in_array($user->id, $survey->users ?? []);
+        $hasPermission = $this->hasPermission('SURVEY_VIEW_STATISTICS');
 
-        if (!$isPublic && !$isCreator && !$isAllowedUser) {
+        if (!$isCreator && !$hasPermission) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 

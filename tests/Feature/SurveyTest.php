@@ -73,7 +73,7 @@ class SurveyTest extends TestCase
         $response->assertStatus(403);
     }
 
-    public function test_getOne_returns_403_for_private_survey_when_creator_without_users_entry()
+    public function test_getOne_returns_200_for_private_survey_when_creator_without_users_entry()
     {
         $user = Users::factory()->create();
 
