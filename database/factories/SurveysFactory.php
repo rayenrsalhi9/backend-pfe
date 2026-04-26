@@ -30,10 +30,18 @@ class SurveysFactory extends Factory
     {
         return $this->state(fn(array $attributes) => [
             'privacy' => 'private',
-            'users' => isset($attributes['created_by'])
-                ? [$attributes['created_by']]
-                : [],
-        ]);
+        ])->afterMaking(function (Surveys $survey) {
+            if ($survey->created_by && !empty($survey->created_by)) {
+                $users = $survey->users ?? [];
+                if (!is_array($users)) {
+                    $users = [];
+                }
+                if (!in_array($survey->created_by, $users)) {
+                    $users[] = $survey->created_by;
+                }
+                $survey->users = $users;
+            }
+        });
     }
 
     public function closed(): static

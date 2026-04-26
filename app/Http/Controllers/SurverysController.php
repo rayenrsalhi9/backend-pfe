@@ -328,16 +328,15 @@ class SurverysController extends Controller
                         $users = [];
                     }
                     $users = array_unique($users);
-                    $users = array_values(array_filter($users));
+                    $users = array_filter($users);
 
                     if (!in_array($survey->created_by, $users)) {
                         $users[] = $survey->created_by;
                     }
-                    if ($user && !in_array($user->id, $users)) {
-                        $users[] = $user->id;
-                    }
 
                     $survey->users = array_values($users);
+                } else {
+                    $survey->users = [];
                 }
             }
 
