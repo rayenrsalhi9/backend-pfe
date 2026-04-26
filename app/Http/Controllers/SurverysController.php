@@ -160,27 +160,6 @@ class SurverysController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        $title = $request->title;
-        if ($title && mb_strlen($title, 'UTF-8') > 255) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Title must not exceed 255 characters'
-            ], 422);
-        }
-
-        $startDate = $request->startDate;
-        $endDate = $request->endDate;
-        if ($startDate && $endDate) {
-            $start = Carbon::parse($startDate);
-            $end = Carbon::parse($endDate);
-            if ($end->lessThan($start)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'End date must be after start date'
-                ], 422);
-            }
-        }
-
         try {
             $isPrivate = $request->privacy === 'private';
 
@@ -286,27 +265,6 @@ class SurverysController extends Controller
             ], 403);
         }
 
-        $title = $request->title;
-        if ($title && mb_strlen($title, 'UTF-8') > 255) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Title must not exceed 255 characters'
-            ], 422);
-        }
-
-        $startDate = $request->startDate;
-        $endDate = $request->endDate;
-        if ($startDate && $endDate) {
-            $start = Carbon::parse($startDate);
-            $end = Carbon::parse($endDate);
-            if ($end->lessThan($start)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'End date must be after start date'
-                ], 422);
-            }
-        }
-
         try {
             if ($request->filled('title')) {
                 $survey->title = $request->title;
@@ -320,7 +278,7 @@ class SurverysController extends Controller
                 $survey->privacy = $isPrivate ? 'private' : 'public';
 
                 if ($isPrivate) {
-                    $users = $request->users ?? [];
+                    $users = $request->has('users') ? $request->users : $survey->users;
                     if (is_string($users)) {
                         $users = json_decode($users, true) ?? [];
                     }

@@ -31,7 +31,7 @@ class SurveysFactory extends Factory
         return $this->state(fn(array $attributes) => [
             'privacy' => 'private',
         ])->afterMaking(function (Surveys $survey) {
-            if ($survey->created_by && !empty($survey->created_by)) {
+            if ($survey->created_by) {
                 $users = $survey->users ?? [];
                 if (!is_array($users)) {
                     $users = [];
