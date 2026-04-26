@@ -24,11 +24,15 @@ class Surveys extends Model
      *
      * @var array
      */
-    protected $fillable = ['title','type','privacy','created_by','start_date','end_date','blog','forum','closed'];
+    protected $fillable = ['title', 'type', 'privacy', 'created_by', 'start_date', 'end_date', 'blog', 'forum', 'closed', 'users'];
+
+    protected $casts = [
+        'users' => 'array',
+    ];
 
     public function creator()
     {
-        return $this->belongsTo(Users::class,'created_by','id');
+        return $this->belongsTo(Users::class, 'created_by', 'id');
     }
 
     public function answers()

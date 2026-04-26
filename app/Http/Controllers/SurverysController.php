@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Carbon\Carbon;
 use App\Models\Surveys;
+use App\Http\Requests\StoreSurveyRequest;
+use App\Http\Requests\UpdateSurveyRequest;
 use Illuminate\Http\Request;
 use App\Models\SurveyAnswers;
 use Illuminate\Support\Facades\DB;
@@ -22,11 +24,19 @@ class SurverysController extends Controller
 
         $query = Surveys::orderBy('created_at', 'DESC')
             ->with('creator', 'answers')
-            ->when($limit, function ($query) use ($limit) {
-                return $query->take($limit);
-            })
             ->when($privacy, function ($query) use ($privacy) {
                 return $query->where('privacy', $privacy);
+            })
+            ->where(function ($q) use ($user) {
+                $q->where('privacy', '!=', 'private')
+                    ->orWhere(function ($q2) use ($user) {
+                        if ($user) {
+                            $q2->where('privacy', 'private')
+                                ->whereJsonContains('users', $user->id);
+                        } else {
+                            $q2->whereRaw('1 = 0');
+                        }
+                    });
             });
 
         if ($request->title) {
@@ -44,21 +54,37 @@ class SurverysController extends Controller
             $query->whereBetween('created_at', [$startDate, $endDate]);
         }
 
-        $survey = $query->get();
-        return response()->json($survey, 200);
+        $query->when($limit, function ($query) use ($limit) {
+            return $query->take($limit);
+        });
+
+        $surveys = $query->get();
+
+        return response()->json($surveys, 200);
     }
 
     function getLast()
     {
         $user = Auth::user();
 
-        $query = Surveys::where('closed', false)->latest();
-
-        if ($user) {
-            $query->whereDoesntHave('answers', function ($q) use ($user) {
-                $q->where('user_id', $user->id);
-            });
-        }
+        $query = Surveys::where('closed', false)
+            ->when($user, function ($q) use ($user) {
+                $q->whereDoesntHave('answers', function ($subQ) use ($user) {
+                    $subQ->where('user_id', $user->id);
+                });
+            })
+            ->where(function ($q) use ($user) {
+                if ($user) {
+                    $q->where('privacy', 'public')
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->where('privacy', 'private')
+                                ->whereJsonContains('users', $user->id);
+                        });
+                } else {
+                    $q->where('privacy', 'public');
+                }
+            })
+            ->latest();
 
         $survey = $query->first();
 
@@ -67,23 +93,57 @@ class SurverysController extends Controller
 
     function getOne($id)
     {
-        $survey = Surveys::where('id', $id)->with('creator')->first();
+        $user = Auth::user();
+
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $survey = Surveys::where('id', $id)
+            ->with('creator')
+            ->withCount('answers')
+            ->first();
+
+        if (!$survey) {
+            return response()->json(['message' => 'Survey not found'], 404);
+        }
+
+        $isPublic = $survey->privacy !== 'private';
+        $isCreator = $survey->created_by === $user->id;
+        $isAllowedUser = in_array($user->id, $survey->users ?? []);
+
+        if (!$isPublic && !$isCreator && !$isAllowedUser) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
         return response()->json($survey, 200);
     }
 
     function statistics($id)
     {
+        $survey = Surveys::where('id', $id)->first();
+
+        if (!$survey) {
+            return response()->json(['message' => 'Survey not found'], 404);
+        }
+
+        $user = Auth::user();
+        $isCreator = $survey->created_by === $user->id;
+        $hasPermission = $this->hasPermission('SURVEY_VIEW_STATISTICS');
+
+        if (!$isCreator && !$hasPermission) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
         try {
             $groupedSurveyAnswers = SurveyAnswers::where('survey_id', $id)->select([
-                DB::raw("MONTH(surveys.created_at) as month"),  // Group by month
-                'surveys.type',  // Group by survey type
-                'survey_answers.answer',  // Group by answer
-                DB::raw('COUNT(survey_answers.id) as count')  // Count the number of answers
+                DB::raw("MONTH(surveys.created_at) as month"),
+                'surveys.type',
+                'survey_answers.answer',
+                DB::raw('COUNT(survey_answers.id) as count')
             ])
-                ->join('surveys', 'survey_answers.survey_id', '=', 'surveys.id')  // Join surveys with survey answers
-                ->groupBy('month', 'surveys.type', 'survey_answers.answer')  // Group by month, type, and answer
+                ->join('surveys', 'survey_answers.survey_id', '=', 'surveys.id')
+                ->groupBy('month', 'surveys.type', 'survey_answers.answer')
                 ->get();
 
             return response()->json($groupedSurveyAnswers, 200);
@@ -92,37 +152,99 @@ class SurverysController extends Controller
         }
     }
 
-    function create(Request $request)
+    function create(StoreSurveyRequest $request)
     {
-
         $user = Auth::user();
 
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $title = $request->title;
+        if ($title && mb_strlen($title, 'UTF-8') > 255) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Title must not exceed 255 characters'
+            ], 422);
+        }
+
+        $startDate = $request->startDate;
+        $endDate = $request->endDate;
+        if ($startDate && $endDate) {
+            $start = Carbon::parse($startDate);
+            $end = Carbon::parse($endDate);
+            if ($end->lessThan($start)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'End date must be after start date'
+                ], 422);
+            }
+        }
+
         try {
+            $isPrivate = $request->privacy === 'private';
+
+            $users = [];
+            if ($request->has('users')) {
+                $inputUsers = $request->users;
+                if (is_string($inputUsers)) {
+                    $inputUsers = json_decode($inputUsers, true) ?? [];
+                }
+                if (!is_array($inputUsers)) {
+                    $inputUsers = [];
+                }
+                $users = array_unique($inputUsers);
+                $users = array_values(array_filter($users));
+            }
+            if ($user && !in_array($user->id, $users)) {
+                $users[] = $user->id;
+            }
+            $users = array_values($users);
 
             $survey = new Surveys();
             $survey->title = $request->title;
             $survey->type = $request->type;
-            $survey->privacy = $request->private ? 'private' : 'public';
-            $survey->blog = $request->blog;
-            $survey->forum = $request->forum;
+            $survey->privacy = $isPrivate ? 'private' : 'public';
+            $survey->blog = $request->boolean('blog', true);
+            $survey->forum = $request->boolean('forum', true);
             $survey->created_by = $user->id;
             $survey->start_date = $request->startDate;
             $survey->end_date = $request->endDate;
+            $survey->users = $isPrivate ? $users : null;
             $survey->save();
 
             $response = $survey->load('creator');
 
             return response()->json($response, 200);
         } catch (\Throwable $th) {
-            return response($th->getMessage(), 500);
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while creating the survey.'
+            ], 500);
         }
     }
 
     function answer($id, Request $request)
     {
+        $user = Auth::user();
+
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
 
         $survey = Surveys::where('id', $id)->first();
-        $user = Auth::user();
+
+        if (!$survey) {
+            return response()->json(['message' => 'Survey not found'], 404);
+        }
+
+        if ($survey->privacy === 'private') {
+            $isCreator = $survey->created_by === $user->id;
+            $allowedUsers = is_array($survey->users) ? $survey->users : json_decode($survey->users ?? '[]', true);
+            if (!$isCreator && !in_array($user->id, $allowedUsers)) {
+                return response()->json(['message' => 'You are not authorized to answer this survey'], 403);
+            }
+        }
 
         $answerExist = SurveyAnswers::where(['survey_id' => $survey->id, 'user_id' => $user->id])->first();
         if ($answerExist)
@@ -141,29 +263,107 @@ class SurverysController extends Controller
         return response()->json($response, 200);
     }
 
-    function update($id, Request $request)
+    function update($id, UpdateSurveyRequest $request)
     {
-
         $user = Auth::user();
 
-        try {
+        $survey = Surveys::where('id', $id)->first();
 
-            $survey = Surveys::where('id', $id)->first();
-            $survey->title = $request->title;
-            $survey->type = $request->type;
-            $survey->privacy = $request->private ? 'private' : 'public';
-            $survey->blog = $request->blog;
-            $survey->forum = $request->forum;
-            $survey->created_by = $user->id;
-            $survey->start_date = $request->startDate;
-            $survey->end_date = $request->endDate;
+        if (!$survey) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Survey not found'
+            ], 404);
+        }
+
+        $isOwner = $user && $survey->created_by === $user->id;
+        $hasPermission = $this->hasPermission('SURVEY_EDIT_SURVEY');
+
+        if (!$isOwner && !$hasPermission) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have permission to edit this survey.'
+            ], 403);
+        }
+
+        $title = $request->title;
+        if ($title && mb_strlen($title, 'UTF-8') > 255) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Title must not exceed 255 characters'
+            ], 422);
+        }
+
+        $startDate = $request->startDate;
+        $endDate = $request->endDate;
+        if ($startDate && $endDate) {
+            $start = Carbon::parse($startDate);
+            $end = Carbon::parse($endDate);
+            if ($end->lessThan($start)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'End date must be after start date'
+                ], 422);
+            }
+        }
+
+        try {
+            if ($request->filled('title')) {
+                $survey->title = $request->title;
+            }
+            if ($request->filled('type')) {
+                $survey->type = $request->type;
+            }
+
+            if ($request->has('privacy')) {
+                $isPrivate = $request->privacy === 'private';
+                $survey->privacy = $isPrivate ? 'private' : 'public';
+
+                if ($isPrivate) {
+                    $users = $request->users ?? [];
+                    if (is_string($users)) {
+                        $users = json_decode($users, true) ?? [];
+                    }
+                    if (!is_array($users)) {
+                        $users = [];
+                    }
+                    $users = array_unique($users);
+                    $users = array_values(array_filter($users));
+
+                    if (!in_array($survey->created_by, $users)) {
+                        $users[] = $survey->created_by;
+                    }
+                    if ($user && !in_array($user->id, $users)) {
+                        $users[] = $user->id;
+                    }
+
+                    $survey->users = array_values($users);
+                }
+            }
+
+            if ($request->has('blog')) {
+                $survey->blog = $request->boolean('blog', $survey->blog);
+            }
+            if ($request->has('forum')) {
+                $survey->forum = $request->boolean('forum', $survey->forum);
+            }
+            if ($request->filled('startDate')) {
+                $survey->start_date = $request->startDate;
+            }
+            if ($request->filled('endDate')) {
+                $survey->end_date = $request->endDate;
+            }
+
             $survey->save();
 
             $response = $survey->load('creator');
 
             return response()->json($response, 200);
         } catch (\Throwable $th) {
-            return response($th->getMessage(), 500);
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while updating the survey.'
+            ], 500);
         }
     }
 
