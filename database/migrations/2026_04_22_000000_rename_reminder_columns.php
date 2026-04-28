@@ -13,11 +13,12 @@ return new class extends Migration
             $table->string('eventName')->nullable()->after('id');
         });
 
-        DB::update('UPDATE reminders SET eventName = COALESCE(event_name, \'\') WHERE isDeleted = 0');
-
-        Schema::table('reminders', function (Blueprint $table) {
-            $table->dropColumn('event_name');
-        });
+        if (Schema::hasColumn('reminders', 'event_name')) {
+            DB::update('UPDATE reminders SET eventName = COALESCE(event_name, \'\') WHERE isDeleted = 0');
+            Schema::table('reminders', function (Blueprint $table) {
+                $table->dropColumn('event_name');
+            });
+        }
     }
 
     public function down()

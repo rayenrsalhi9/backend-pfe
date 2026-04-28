@@ -64,6 +64,7 @@ class AdditionalPermissionSeeder extends Seeder
             ['code' => 'SURVEY_EDIT_SURVEY', 'name' => 'Edit Survey', 'order' => 3, 'page' => 'Surveys'],
             ['code' => 'SURVEY_DELETE_SURVEY', 'name' => 'Delete Survey', 'order' => 4, 'page' => 'Surveys'],
             ['code' => 'SURVEY_ANSWER_SURVEY', 'name' => 'Answer Survey', 'order' => 5, 'page' => 'Surveys'],
+            ['code' => 'SURVEY_VIEW_STATISTICS', 'name' => 'View Survey Statistics', 'order' => 6, 'page' => 'Surveys'],
 
             // Blogs
             ['code' => 'BLOG_VIEW_BLOGS', 'name' => 'View Blogs', 'order' => 1, 'page' => 'Blogs'],
