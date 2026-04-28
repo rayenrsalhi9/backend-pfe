@@ -90,7 +90,7 @@ if (isset($attributes->description) && $attributes->description) {
 
     private function checkOwnership(Reminders $model)
     {
-        $userId = Auth::parseToken()->getPayload()->get('userId');
+        $userId = Auth::id();
 
         // Owner check
         if ($model->createdBy === $userId) {
@@ -111,7 +111,7 @@ if (isset($attributes->description) && $attributes->description) {
         $model = $this->model->findOrFail($id);
         $this->checkOwnership($model);
 
-        $userId = Auth::parseToken()->getPayload()->get('userId');
+        $userId = Auth::id();
 
         $model->isDeleted = true;
         $model->deletedBy = $userId;
@@ -146,7 +146,7 @@ if (isset($attributes->description) && $attributes->description) {
             $model = $this->model->newInstance($requestData);
             $saved = $model->save();
 
-            $currentUserId = Auth::parseToken()->getPayload()->get('userId');
+            $currentUserId = Auth::id();
 
             $notificationPayloads = [];
             $uniqueUserIds = [];
@@ -206,6 +206,9 @@ if (isset($attributes->description) && $attributes->description) {
             }
 
             return $saved;
+        } catch (RepositoryException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error($e);
@@ -223,7 +226,7 @@ if (isset($attributes->description) && $attributes->description) {
             $requestData = is_array($request) ? $request : $request->all();
 
             // Simple Validation
-            if (isset($requestData['eventName']) && empty($requestData['eventName'])) {
+            if (array_key_exists('eventName', $requestData) && empty($requestData['eventName'])) {
                 throw new \Exception('Event name cannot be empty');
             }
 
@@ -284,7 +287,7 @@ if (isset($attributes->description) && $attributes->description) {
             }
 
             $notificationPayloads = [];
-            $currentUserId = Auth::parseToken()->getPayload()->get('userId');
+            $currentUserId = Auth::id();
 
             if ($hasReminderUsers) {
                 $model->reminderUsers()->createMany($reminderUsers);
@@ -341,10 +344,13 @@ if (isset($attributes->description) && $attributes->description) {
             DB::rollBack();
             Log::error($e);
             throw $e;
+        } catch (RepositoryException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error($e);
-            throw new RepositoryException('Error saving reminder');
+            throw new RepositoryException('Error saving reminder: ' . $e->getMessage());
         }
     }
 
@@ -360,7 +366,7 @@ if (isset($attributes->description) && $attributes->description) {
 
     public function getReminderForLoginUser($attributes)
     {
-        $userId = Auth::parseToken()->getPayload()->get('userId');
+        $userId = Auth::id();
         $query = Reminders::select([
             'reminders.createdDate',
             'reminders.startDate',
@@ -413,7 +419,7 @@ if (isset($attributes->description) && $attributes->description) {
 
     public function getReminderForLoginUserCount($attributes)
     {
-        $userId = Auth::parseToken()->getPayload()->get('userId');
+        $userId = Auth::id();
         $query = Reminders::query()
             ->where(function ($q) use ($userId) {
                 $q->where('createdBy', $userId)
@@ -442,7 +448,7 @@ if (isset($attributes->description) && $attributes->description) {
 
     public function deleteReminderCurrentUser($id)
     {
-        $userId = Auth::parseToken()->getPayload()->get('userId');
+        $userId = Auth::id();
         return ReminderUsers::where('reminderId', '=', $id)->where('userId', '=', $userId)->delete();
     }
 

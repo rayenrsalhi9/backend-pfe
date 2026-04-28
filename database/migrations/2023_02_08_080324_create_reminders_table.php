@@ -15,8 +15,7 @@ return new class extends Migration
     {
         Schema::create('reminders', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->string('subject')->nullable();
-            $table->string('message')->nullable();
+            $table->string('description')->nullable();
             $table->integer('frequency')->nullable();
             $table->dateTime('startDate');
             $table->dateTime('endDate')->nullable();
