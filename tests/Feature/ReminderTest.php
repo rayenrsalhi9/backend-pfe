@@ -33,6 +33,27 @@ class ReminderTest extends TestCase
         return $this->withHeader('Authorization', "Bearer {$token}");
     }
 
+    protected function createReminderData(array $overrides = []): array
+    {
+        $userId = $overrides['userId'] ?? Users::factory()->create()->id;
+        $baseData = [
+            'id' => \Ramsey\Uuid\Uuid::uuid4(),
+            'eventName' => 'Test Event',
+            'description' => 'Test Description',
+            'startDate' => Carbon::now()->addDay(),
+            'endDate' => Carbon::now()->addDays(2),
+            'frequency' => FrequencyEnum::OneTime->value,
+            'isRepeated' => 0,
+            'isEmailNotification' => 0,
+            'isDeleted' => 0,
+            'deletedBy' => null,
+            'createdBy' => $userId,
+            'modifiedBy' => $userId
+        ];
+        unset($overrides['userId']);
+        return array_merge($baseData, $overrides);
+    }
+
     protected function tearDown(): void
     {
         JWTAuth::unsetToken();
@@ -46,28 +67,18 @@ class ReminderTest extends TestCase
         
         // Create some reminders
         DB::table('reminders')->insert([
-            [
-                'id' => \Ramsey\Uuid\Uuid::uuid4(),
+            $this->createReminderData([
                 'eventName' => 'Test Event 1',
-                'description' => 'Description for Test Event 1',
-                'startDate' => Carbon::now()->addDay(),
-                'endDate' => Carbon::now()->addDays(2),
                 'frequency' => FrequencyEnum::OneTime->value,
-                'createdBy' => $user->id,
-                'modifiedBy' => $user->id,
-                'isDeleted' => 0
-            ],
-            [
-                'id' => \Ramsey\Uuid\Uuid::uuid4(),
+                'userId' => $user->id
+            ]),
+            $this->createReminderData([
                 'eventName' => 'Test Event 2',
-                'description' => 'Description for Test Event 2',
+                'frequency' => FrequencyEnum::Daily->value,
                 'startDate' => Carbon::now()->addDays(3),
                 'endDate' => Carbon::now()->addDays(4),
-                'frequency' => FrequencyEnum::Daily->value,
-                'createdBy' => $user->id,
-                'modifiedBy' => $user->id,
-                'isDeleted' => 0
-            ]
+                'userId' => $user->id
+            ])
         ]);
 
         $response = $this->actingAsUser($user, ['REMINDER_VIEW_REMINDERS'])
@@ -88,24 +99,20 @@ class ReminderTest extends TestCase
 
         // Reminder 1 created by user1
         DB::table('reminders')->insert([
-            'id' => $reminderId1,
-            'eventName' => 'User 1 Event',
-            'description' => 'Description for User 1 Event',
-            'startDate' => Carbon::now()->addDay(),
-            'createdBy' => $user1->id,
-            'modifiedBy' => $user1->id,
-            'isDeleted' => 0
+            $this->createReminderData([
+                'id' => $reminderId1,
+                'eventName' => 'User 1 Event',
+                'userId' => $user1->id
+            ])
         ]);
 
         // Reminder 2 created by user2 but assigned to user1
         DB::table('reminders')->insert([
-            'id' => $reminderId2,
-            'eventName' => 'Assigned to User 1',
-            'description' => 'Description for Assigned to User 1',
-            'startDate' => Carbon::now()->addDay(),
-            'createdBy' => $user2->id,
-            'modifiedBy' => $user2->id,
-            'isDeleted' => 0
+            $this->createReminderData([
+                'id' => $reminderId2,
+                'eventName' => 'Assigned to User 1',
+                'userId' => $user2->id
+            ])
         ]);
         
         DB::table('reminderUsers')->insert([
@@ -224,13 +231,12 @@ class ReminderTest extends TestCase
         $reminderId = \Ramsey\Uuid\Uuid::uuid4();
 
         DB::table('reminders')->insert([
-            'id' => $reminderId,
-            'eventName' => 'Old Name',
-            'description' => 'Old description',
-            'startDate' => Carbon::now()->addDay(),
-            'createdBy' => $user->id,
-            'modifiedBy' => $user->id,
-            'isDeleted' => 0
+            $this->createReminderData([
+                'id' => $reminderId,
+                'eventName' => 'Old Name',
+                'description' => 'Old description',
+                'userId' => $user->id
+            ])
         ]);
 
         $response = $this->actingAsUser($user, ['REMINDER_EDIT_REMINDER'])
@@ -255,13 +261,11 @@ class ReminderTest extends TestCase
         $reminderId = \Ramsey\Uuid\Uuid::uuid4();
 
         DB::table('reminders')->insert([
-            'id' => $reminderId,
-            'eventName' => 'Original Event',
-            'description' => 'Original description',
-            'startDate' => Carbon::now()->addDay(),
-            'createdBy' => $creator->id,
-            'modifiedBy' => $creator->id,
-            'isDeleted' => 0
+            $this->createReminderData([
+                'id' => $reminderId,
+                'eventName' => 'Original Event',
+                'userId' => $creator->id
+            ])
         ]);
         
         DB::table('reminderUsers')->insert([
@@ -290,13 +294,11 @@ class ReminderTest extends TestCase
         $reminderId = \Ramsey\Uuid\Uuid::uuid4();
 
         DB::table('reminders')->insert([
-            'id' => $reminderId,
-            'eventName' => 'Private Event',
-            'description' => 'Private description',
-            'startDate' => Carbon::now()->addDay(),
-            'createdBy' => $owner->id,
-            'modifiedBy' => $owner->id,
-            'isDeleted' => 0
+            $this->createReminderData([
+                'id' => $reminderId,
+                'eventName' => 'Private Event',
+                'userId' => $owner->id
+            ])
         ]);
 
         $response = $this->actingAsUser($intruder, ['REMINDER_EDIT_REMINDER'])
@@ -314,13 +316,11 @@ class ReminderTest extends TestCase
         $reminderId = \Ramsey\Uuid\Uuid::uuid4();
 
         DB::table('reminders')->insert([
-            'id' => $reminderId,
-            'eventName' => 'To Be Deleted',
-            'description' => 'Description for deletion',
-            'startDate' => Carbon::now()->addDay(),
-            'createdBy' => $user->id,
-            'modifiedBy' => $user->id,
-            'isDeleted' => 0
+            $this->createReminderData([
+                'id' => $reminderId,
+                'eventName' => 'To Be Deleted',
+                'userId' => $user->id
+            ])
         ]);
 
         $response = $this->actingAsUser($user, ['REMINDER_DELETE_REMINDER'])
@@ -343,13 +343,11 @@ class ReminderTest extends TestCase
         $reminderId = \Ramsey\Uuid\Uuid::uuid4();
 
         DB::table('reminders')->insert([
-            'id' => $reminderId,
-            'eventName' => 'Group Event',
-            'description' => 'Group event description',
-            'startDate' => Carbon::now()->addDay(),
-            'createdBy' => $creator->id,
-            'modifiedBy' => $creator->id,
-            'isDeleted' => 0
+            $this->createReminderData([
+                'id' => $reminderId,
+                'eventName' => 'Group Event',
+                'userId' => $creator->id
+            ])
         ]);
         
         DB::table('reminderUsers')->insert([
@@ -379,7 +377,7 @@ class ReminderTest extends TestCase
                 'startDate' => Carbon::now()->addDay()
             ]);
 
-        $response->assertStatus(500); 
+        $response->assertStatus(422);
         $this->assertStringContainsString('Event name is required', $response->json('message'));
     }
 

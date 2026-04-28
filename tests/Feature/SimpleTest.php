@@ -35,7 +35,10 @@ class SimpleTest extends TestCase
             'startDate' => Carbon::now()->addDay(),
             'createdBy' => $user->id,
             'modifiedBy' => $user->id,
-            'isDeleted' => 0
+            'isDeleted' => 0,
+            'isRepeated' => 0,
+            'isEmailNotification' => 0,
+            'deletedBy' => null
         ]);
 
         $token = $this->getAuthToken($user, ['REMINDER_DELETE_REMINDER']);
@@ -43,7 +46,6 @@ class SimpleTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->deleteJson("/api/reminder/{$reminderId}");
 
-        $response->dump();
         $response->assertStatus(204);
     }
 }

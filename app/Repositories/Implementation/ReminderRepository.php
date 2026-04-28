@@ -129,10 +129,10 @@ if (isset($attributes->description) && $attributes->description) {
 
             // Simple Validation
             if (empty($requestData['eventName'])) {
-                throw new \Exception('Event name is required');
+                throw new RepositoryException('Event name is required', 422);
             }
             if (empty($requestData['startDate'])) {
-                throw new \Exception('Start date is required');
+                throw new RepositoryException('Start date is required', 422);
             }
 
             if (!isset($requestData['frequency']) || $requestData['frequency'] == '') {
