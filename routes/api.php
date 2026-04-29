@@ -344,6 +344,8 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::delete('/reminder/currentuser/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
 
+    Route::get('/reminder/calendar-events/{month}/{year}', [ReminderController::class, 'getCalendarEvents']);
+
     Route::get('/user-notifications', [UserNotificationController::class, 'getNotifications']);
     Route::post('/user-notification/mark-as-read', [UserNotificationController::class, 'markAsRead']);
     Route::post('/user-notification/mark-all-as-read', [UserNotificationController::class, 'markAllAsRead']);

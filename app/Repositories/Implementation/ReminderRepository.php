@@ -227,7 +227,7 @@ if (isset($attributes->description) && $attributes->description) {
 
             // Simple Validation
             if (array_key_exists('eventName', $requestData) && empty($requestData['eventName'])) {
-                throw new \Exception('Event name cannot be empty');
+                throw new RepositoryException('Event name cannot be empty', 422);
             }
 
             if (array_key_exists('eventName', $requestData)) {
@@ -366,7 +366,9 @@ if (isset($attributes->description) && $attributes->description) {
 
     public function getReminderForLoginUser($attributes)
     {
-        $userId = Auth::id();
+        if (! $userId = Auth::id()) {
+            throw new \Illuminate\Auth\Access\AuthorizationException('Unauthenticated user');
+        }
         $query = Reminders::select([
             'reminders.createdDate',
             'reminders.startDate',
@@ -419,7 +421,9 @@ if (isset($attributes->description) && $attributes->description) {
 
     public function getReminderForLoginUserCount($attributes)
     {
-        $userId = Auth::id();
+        if (! $userId = Auth::id()) {
+            throw new \Illuminate\Auth\Access\AuthorizationException('Unauthenticated user');
+        }
         $query = Reminders::query()
             ->where(function ($q) use ($userId) {
                 $q->where('createdBy', $userId)
@@ -450,6 +454,226 @@ if (isset($attributes->description) && $attributes->description) {
     {
         $userId = Auth::id();
         return ReminderUsers::where('reminderId', '=', $id)->where('userId', '=', $userId)->delete();
+    }
+
+    public function getCalendarEvents($month, $year)
+    {
+        $userId = Auth::id();
+        if (!$userId) {
+            throw new \Illuminate\Auth\Access\AuthorizationException('Unauthenticated user');
+        }
+
+        $monthStartDate = new \DateTime();
+        $monthStartDate->setDate($year, $month, 1);
+        $monthEndDate = (clone $monthStartDate)->modify('+1 month')->modify('-1 day');
+
+        $monthStartStr = $monthStartDate->format('Y-m-d');
+        $monthEndStr = $monthEndDate->format('Y-m-d');
+
+        $events = [];
+
+        $reminders = Reminders::select(['reminders.*'])
+            ->where('reminders.isDeleted', '=', 0)
+            ->with(['reminderUsers', 'dailyReminders', 'quarterlyReminders', 'halfYearlyReminders'])
+            ->where(function ($q) use ($userId) {
+                $q->where('createdBy', $userId)
+                    ->orWhereExists(function ($query) use ($userId) {
+                        $query->select(DB::raw(1))
+                            ->from('reminderUsers')
+                            ->whereRaw('reminderUsers.reminderId = reminders.id')
+                            ->where('reminderUsers.userId', '=', $userId);
+                    });
+            })
+            ->get();
+
+        foreach ($reminders as $r) {
+            $reminderStart = new \DateTime($r->startDate);
+            $reminderStartTime = $reminderStart->format('H:i:s');
+            $reminderEnd = $r->endDate ? new \DateTime($r->endDate) : null;
+            $reminderEndTime = $reminderEnd ? $reminderEnd->format('H:i:s') : $reminderStartTime;
+
+            if ($r->frequency === FrequencyEnum::OneTime) {
+                if ($r->startDate >= $monthStartStr && $r->startDate <= $monthEndStr . ' 23:59:59') {
+                    $events[] = [
+                        'id' => $r->id,
+                        'title' => $r->eventName,
+                        'description' => $r->description,
+                        'start' => $r->startDate,
+                        'end' => $r->endDate ?? $r->startDate,
+                        'allDay' => false,
+                        'category' => $r->category ?? 'normal',
+                        'frequency' => FrequencyEnum::OneTime->value,
+                    ];
+                }
+            }
+
+            $reminderStartDateStr = $r->startDate;
+
+            if ($r->isRepeated == 1 && $reminderStartDateStr <= $monthEndStr . ' 23:59:59') {
+                $this->expandRecurringReminder($r, $userId, $monthStartStr, $monthEndStr, $reminderStartTime, $reminderEndTime, $reminderStartDateStr, $events);
+            }
+        }
+
+        return $events;
+    }
+
+    private function expandRecurringReminder($reminder, $userId, $monthStartStr, $monthEndStr, $startTime, $endTime, $reminderStartDateStr, &$events)
+    {
+        $monthStart = new \DateTime($monthStartStr);
+        $monthEnd = new \DateTime($monthEndStr);
+        $reminderStartDate = new \DateTime($reminderStartDateStr);
+
+        $reminderStartDateOnly = date('Y-m-d', strtotime($reminderStartDateStr));
+
+        $year = (int)$monthStart->format('Y');
+        $month = (int)$monthStart->format('m');
+
+        if ($reminder->frequency === FrequencyEnum::Daily) {
+            $currentDate = clone $monthStart;
+            $reminderDateOnly = clone $reminderStartDate;
+            $reminderDateOnly->setTime(0, 0, 0);
+            if ($currentDate < $reminderDateOnly) {
+                $currentDate = clone $reminderDateOnly;
+            }
+            $monthEndOnly = clone $monthEnd;
+            $monthEndOnly->setTime(23, 59, 59);
+            while ($currentDate <= $monthEndOnly) {
+                $events[] = [
+                    'id' => $reminder->id,
+                    'title' => $reminder->eventName,
+                    'description' => $reminder->description,
+                    'start' => $currentDate->format('Y-m-d') . ' ' . $startTime,
+                    'end' => $currentDate->format('Y-m-d') . ' ' . $endTime,
+                    'allDay' => false,
+                    'category' => $reminder->category ?? 'normal',
+                    'frequency' => $reminder->frequency->value,
+                ];
+                $currentDate->modify('+1 day');
+            }
+        }
+
+        if ($reminder->frequency === FrequencyEnum::Weekly) {
+            $targetDayOfWeek = $reminder->dayOfWeek;
+            $currentDate = clone $monthStart;
+            $monthEndOnly = clone $monthEnd;
+            $monthEndOnly->setTime(23, 59, 59);
+            while ($currentDate <= $monthEndOnly) {
+                $currentDateOnly = $currentDate->format('Y-m-d');
+                if ($currentDateOnly >= $reminderStartDateOnly && $currentDate->format('w') == $targetDayOfWeek) {
+                    $events[] = [
+                        'id' => $reminder->id,
+                        'title' => $reminder->eventName,
+                        'description' => $reminder->description,
+                        'start' => $currentDate->format('Y-m-d') . ' ' . $startTime,
+                        'end' => $currentDate->format('Y-m-d') . ' ' . $endTime,
+                        'allDay' => false,
+                        'category' => $reminder->category ?? 'normal',
+                        'frequency' => $reminder->frequency->value,
+                    ];
+                }
+                $currentDate->modify('+1 day');
+            }
+        }
+
+        if ($reminder->frequency === FrequencyEnum::Monthly) {
+            $targetDay = (int)$reminderStartDate->format('d');
+            $daysInMonth = (int)$monthEnd->format('t');
+            $actualDay = min($targetDay, $daysInMonth);
+
+            $occurrenceDate = new \DateTime($year . '-' . str_pad($month, 2, '0', STR_PAD_LEFT) . '-' . str_pad($actualDay, 2, '0', STR_PAD_LEFT));
+            $occurrenceDateOnly = $occurrenceDate->format('Y-m-d');
+            if ($occurrenceDateOnly >= $reminderStartDateOnly) {
+                $events[] = [
+                    'id' => $reminder->id,
+                    'title' => $reminder->eventName,
+                    'description' => $reminder->description,
+                    'start' => $occurrenceDateOnly . ' ' . $startTime,
+                    'end' => $occurrenceDateOnly . ' ' . $endTime,
+                    'allDay' => false,
+                    'category' => $reminder->category ?? 'normal',
+                    'frequency' => $reminder->frequency->value,
+                ];
+            }
+        }
+
+        if ($reminder->frequency === FrequencyEnum::Quarterly) {
+            $quarterlyConfigs = $reminder->quarterlyReminders;
+            if ($quarterlyConfigs && $quarterlyConfigs->count() > 0) {
+                foreach ($quarterlyConfigs as $config) {
+                    $configMonth = $config->month;
+                    $configDay = $config->day;
+                    $daysInConfigMonth = (int)date('t', mktime(0, 0, 0, $configMonth, 1, $year));
+                    $actualDay = min($configDay, $daysInConfigMonth);
+
+                    if ((int)$configMonth == $month) {
+                        $occurrenceDateOnly = $year . '-' . str_pad($configMonth, 2, '0', STR_PAD_LEFT) . '-' . str_pad($actualDay, 2, '0', STR_PAD_LEFT);
+                        if ($occurrenceDateOnly >= $reminderStartDateOnly) {
+                            $events[] = [
+                                'id' => $reminder->id,
+                                'title' => $reminder->eventName,
+                                'description' => $reminder->description,
+                                'start' => $occurrenceDateOnly . ' ' . $startTime,
+                                'end' => $occurrenceDateOnly . ' ' . $endTime,
+                                'allDay' => false,
+                                'category' => $reminder->category ?? 'normal',
+                                'frequency' => $reminder->frequency->value,
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($reminder->frequency === FrequencyEnum::HalfYearly) {
+            $halfYearlyConfigs = $reminder->halfYearlyReminders;
+            if ($halfYearlyConfigs && $halfYearlyConfigs->count() > 0) {
+                foreach ($halfYearlyConfigs as $config) {
+                    $configMonth = $config->month;
+                    $configDay = $config->day;
+                    $daysInConfigMonth = (int)date('t', mktime(0, 0, 0, $configMonth, 1, $year));
+                    $actualDay = min($configDay, $daysInConfigMonth);
+
+                    if ((int)$configMonth == $month) {
+                        $occurrenceDateOnly = $year . '-' . str_pad($configMonth, 2, '0', STR_PAD_LEFT) . '-' . str_pad($actualDay, 2, '0', STR_PAD_LEFT);
+                        if ($occurrenceDateOnly >= $reminderStartDateOnly) {
+                            $events[] = [
+                                'id' => $reminder->id,
+                                'title' => $reminder->eventName,
+                                'description' => $reminder->description,
+                                'start' => $occurrenceDateOnly . ' ' . $startTime,
+                                'end' => $occurrenceDateOnly . ' ' . $endTime,
+                                'allDay' => false,
+                                'category' => $reminder->category ?? 'normal',
+                                'frequency' => $reminder->frequency->value,
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($reminder->frequency === FrequencyEnum::Yearly) {
+            $targetMonth = (int)$reminderStartDate->format('m');
+            $targetDay = (int)$reminderStartDate->format('d');
+            $daysInTargetMonth = (int)date('t', mktime(0, 0, 0, $targetMonth, 1, $year));
+            $actualDay = min($targetDay, $daysInTargetMonth);
+
+            if ($targetMonth == $month) {
+                $occurrenceDateOnly = $year . '-' . str_pad($targetMonth, 2, '0', STR_PAD_LEFT) . '-' . str_pad($actualDay, 2, '0', STR_PAD_LEFT);
+                if ($occurrenceDateOnly >= $reminderStartDateOnly) {
+                    $events[] = [
+                        'id' => $reminder->id,
+                        'title' => $reminder->eventName,
+                        'description' => $reminder->description,
+                        'start' => $occurrenceDateOnly . ' ' . $startTime,
+                        'end' => $occurrenceDateOnly . ' ' . $endTime,
+                        'allDay' => false,
+                        'category' => $reminder->category ?? 'normal',
+                        'frequency' => $reminder->frequency->value,
+                    ];
+                }
+            }
+        }
     }
 
     private function triggerPusherNotification(string $userId, string $message, ?string $reminderId = null): void

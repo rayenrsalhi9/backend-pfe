@@ -402,7 +402,142 @@ class ReminderTest extends TestCase
                 'eventName' => ''
             ]);
 
-        $response->assertStatus(500);
+        $response->assertStatus(422);
         $this->assertStringContainsString('Event name cannot be empty', $response->json('message'));
+    }
+
+    /** @test */
+    public function it_returns_calendar_events_for_authenticated_user()
+    {
+        $user = Users::factory()->create();
+        $reminderId = \Ramsey\Uuid\Uuid::uuid4();
+        $startDate = Carbon::now()->startOfMonth()->addDays(2);
+
+        DB::table('reminders')->insert([
+            'id' => $reminderId,
+            'eventName' => 'Test Reminder',
+            'description' => 'Test',
+            'startDate' => $startDate->format('Y-m-d H:i:s'),
+            'endDate' => $startDate->copy()->addHour()->format('Y-m-d H:i:s'),
+            'frequency' => FrequencyEnum::Daily->value,
+            'isRepeated' => 1,
+            'createdBy' => $user->id,
+            'modifiedBy' => $user->id,
+            'isDeleted' => 0,
+            'category' => 'normal',
+        ]);
+
+        $month = $startDate->month;
+        $year = $startDate->year;
+
+        $response = $this->actingAsUser($user)
+            ->getJson("/api/reminder/calendar-events/{$month}/{$year}");
+
+        $response->assertStatus(200);
+        $events = $response->json();
+        $this->assertNotEmpty($events, 'Calendar events should not be empty. Got: ' . json_encode($events));
+    }
+
+    /** @test */
+    public function it_expands_daily_reminder_across_days_in_calendar()
+    {
+        $user = Users::factory()->create();
+        $reminderId = \Ramsey\Uuid\Uuid::uuid4();
+        $startDate = Carbon::now()->startOfMonth()->addDays(2);
+
+        DB::table('reminders')->insert([
+            'id' => $reminderId,
+            'eventName' => 'Daily Test',
+            'description' => 'Daily recurring reminder',
+            'startDate' => $startDate->format('Y-m-d H:i:s'),
+            'endDate' => $startDate->copy()->addHour()->format('Y-m-d H:i:s'),
+            'frequency' => FrequencyEnum::Daily->value,
+            'isRepeated' => 1,
+            'createdBy' => $user->id,
+            'modifiedBy' => $user->id,
+            'isDeleted' => 0,
+            'category' => 'normal',
+        ]);
+
+        $month = $startDate->month;
+        $year = $startDate->year;
+
+        $response = $this->actingAsUser($user)
+            ->getJson("/api/reminder/calendar-events/{$month}/{$year}");
+
+        $response->assertStatus(200);
+        $events = $response->json();
+        $this->assertGreaterThan(1, count($events));
+        $this->assertEquals('Daily Test', $events[0]['title']);
+    }
+
+    /** @test */
+    public function it_expands_weekly_reminder_on_correct_weekday_in_calendar()
+    {
+        $user = Users::factory()->create();
+        $reminderId = \Ramsey\Uuid\Uuid::uuid4();
+        $startDate = Carbon::now()->startOfMonth()->addDays(2);
+        $dayOfWeek = (int)$startDate->format('w');
+
+        DB::table('reminders')->insert([
+            'id' => $reminderId,
+            'eventName' => 'Weekly Monday Test',
+            'description' => 'Weekly recurring reminder',
+            'startDate' => $startDate->format('Y-m-d H:i:s'),
+            'endDate' => $startDate->copy()->addHour()->format('Y-m-d H:i:s'),
+            'frequency' => FrequencyEnum::Weekly->value,
+            'dayOfWeek' => $dayOfWeek,
+            'isRepeated' => 1,
+            'createdBy' => $user->id,
+            'modifiedBy' => $user->id,
+            'isDeleted' => 0,
+            'category' => 'normal',
+        ]);
+
+        $month = $startDate->month;
+        $year = $startDate->year;
+
+        $response = $this->actingAsUser($user)
+            ->getJson("/api/reminder/calendar-events/{$month}/{$year}");
+
+        $response->assertStatus(200);
+        $events = $response->json();
+        $this->assertGreaterThan(0, count($events), 'Weekly reminder should produce at least one event');
+        foreach ($events as $event) {
+            $eventDate = Carbon::parse($event['start']);
+            $this->assertEquals($dayOfWeek, (int)$eventDate->format('w'), "Event should only fall on the configured day of week");
+        }
+    }
+
+    /** @test */
+    public function it_shows_once_reminder_only_on_its_start_date_in_calendar()
+    {
+        $user = Users::factory()->create();
+        $reminderId = \Ramsey\Uuid\Uuid::uuid4();
+        $startDate = Carbon::now()->addDays(3);
+
+        DB::table('reminders')->insert([
+            'id' => $reminderId,
+            'eventName' => 'One Time Event',
+            'startDate' => $startDate->format('Y-m-d H:i:s'),
+            'endDate' => $startDate->copy()->addHour()->format('Y-m-d H:i:s'),
+            'frequency' => FrequencyEnum::OneTime->value,
+            'isRepeated' => 0,
+            'createdBy' => $user->id,
+            'modifiedBy' => $user->id,
+            'isDeleted' => 0,
+            'category' => 'normal',
+        ]);
+
+        $month = $startDate->month;
+        $year = $startDate->year;
+
+        $response = $this->actingAsUser($user)
+            ->getJson("/api/reminder/calendar-events/{$month}/{$year}");
+
+        $response->assertStatus(200);
+        $events = $response->json();
+        $this->assertCount(1, $events);
+        $this->assertEquals('One Time Event', $events[0]['title']);
     }
 }

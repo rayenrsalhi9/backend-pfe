@@ -69,4 +69,9 @@ class ReminderController extends Controller
     {
         return response($this->reminderRepository->deleteReminderCurrentUser($id));
     }
+
+    public function getCalendarEvents($month, $year)
+    {
+        return response()->json($this->reminderRepository->getCalendarEvents((int)$month, (int)$year));
+    }
 }
