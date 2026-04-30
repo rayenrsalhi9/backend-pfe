@@ -69,4 +69,20 @@ class ReminderController extends Controller
     {
         return response($this->reminderRepository->deleteReminderCurrentUser($id));
     }
+
+    public function getCalendarEvents($month, $year)
+    {
+        $monthInt = (int)$month;
+        $yearInt = (int)$year;
+
+        if ($monthInt < 1 || $monthInt > 12) {
+            return response()->json(['message' => 'Invalid month. Must be between 1 and 12.'], 422);
+        }
+
+        if ($yearInt <= 0 || $yearInt > 9999) {
+            return response()->json(['message' => 'Invalid year.'], 422);
+        }
+
+        return response()->json($this->reminderRepository->getCalendarEvents($monthInt, $yearInt));
+    }
 }

@@ -69,14 +69,19 @@ class Reminders extends Model
         parent::boot();
 
         static::creating(function (Model $model) {
-            $userId = Auth::parseToken()->getPayload()->get('userId');
+            $userId = Auth::id();
+            if (!$userId) {
+                return;
+            }
             $model->createdBy = $userId;
             $model->modifiedBy = $userId;
             $model->setAttribute($model->getKeyName(), Uuid::uuid4());
         });
         static::updating(function (Model $model) {
-            $userId = Auth::parseToken()->getPayload()->get('userId');
-            $model->modifiedBy = $userId;
+            $userId = Auth::id();
+            if ($userId) {
+                $model->modifiedBy = $userId;
+            }
         });
 
         static::addGlobalScope('isDeleted', function (Builder $builder) {

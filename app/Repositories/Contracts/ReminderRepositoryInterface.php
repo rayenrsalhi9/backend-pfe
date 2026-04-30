@@ -13,4 +13,5 @@ interface ReminderRepositoryInterface extends BaseRepositoryInterface
     public function  getReminderForLoginUser($attributes);
     public function getReminderForLoginUserCount($attributes);
     public function deleteReminderCurrentUser($id);
+    public function getCalendarEvents($month, $year);
 }

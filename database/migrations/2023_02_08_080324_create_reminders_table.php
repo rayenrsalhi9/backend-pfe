@@ -15,20 +15,19 @@ return new class extends Migration
     {
         Schema::create('reminders', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->string('subject')->nullable();
-            $table->string('message')->nullable();
+            $table->string('description')->nullable();
             $table->integer('frequency')->nullable();
             $table->dateTime('startDate');
             $table->dateTime('endDate')->nullable();
             $table->integer('dayOfWeek')->nullable();
-            $table->boolean('isRepeated');
-            $table->boolean('isEmailNotification');
+            $table->boolean('isRepeated')->default(false);
+            $table->boolean('isEmailNotification')->default(false);
             $table->uuid('documentId')->nullable();
             $table->foreign('documentId')->references('id')->on('documents');
             $table->uuid('createdBy')->nullable(false);
             $table->foreign('createdBy')->references('id')->on('users');
-            $table->string('modifiedBy');
-            $table->string('deletedBy');
+            $table->uuid('modifiedBy')->nullable();
+            $table->uuid('deletedBy')->nullable();
             $table->boolean('isDeleted');
             $table->dateTime('createdDate');
             $table->dateTime('modifiedDate');
