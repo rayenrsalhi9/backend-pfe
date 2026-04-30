@@ -9,11 +9,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Notifications\Notifiable;
 use App\Traits\Uuids;
 use Illuminate\Database\Eloquent\Builder;
+use App\Traits\ClearsCacheTrait;
 
 class Documents extends Model
 {
     use HasFactory, SoftDeletes;
     use Notifiable, Uuids;
+    use ClearsCacheTrait;
 
     const CREATED_AT = 'createdDate';
     const UPDATED_AT = 'modifiedDate';

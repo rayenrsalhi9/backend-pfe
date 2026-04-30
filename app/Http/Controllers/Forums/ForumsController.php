@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Forums;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\HasPermissionTrait;
+use App\Traits\CacheableTrait;
 use App\Models\ForumComments;
 use App\Models\ForumReactions;
 use App\Models\Forums;
@@ -17,49 +18,57 @@ use Illuminate\Support\Facades\Log;
 class ForumsController extends Controller
 {
     use HasPermissionTrait;
+    use CacheableTrait;
 
     function getAll(Request $request)
     {
-        $limit = $request->limit;
-        $banner = $request->banner;
+        $cacheKey = $this->getCacheKey('forums', 'list', md5(json_encode($request->all())));
+        $ttl = $this->getCacheTtl('forums');
 
-        $query = Forums::orderBy('created_at', 'DESC')
-            ->with(['creator' => function ($q) {
-                $q->select('users.id', 'users.firstName', 'users.lastName', 'users.userName', 'users.avatar', 'users.isDeleted')->withoutGlobalScope('isDeleted');
-            }])
-            ->with('category')
-            ->withCount(['reactions', 'comments'])
-            ->when($limit, function ($query) use ($limit) {
-                return $query->take($limit);
-            })
-            ->when($banner, function ($query) use ($banner) {
-                return $query->where('banner', boolval($banner));
-            });
+        $forums = $this->cacheRemember($cacheKey, 'forums', $ttl, function () use ($request) {
+            $limit = $request->limit;
+            $banner = $request->banner;
 
-        if ($request->closed) {
-            $query->where('closed', 'like', $request->closed);
-        }
+            $query = Forums::orderBy('created_at', 'DESC')
+                ->with(['creator' => function ($q) {
+                    $q->select('users.id', 'users.firstName', 'users.lastName', 'users.userName', 'users.avatar', 'users.isDeleted')->withoutGlobalScope('isDeleted');
+                }])
+                ->with('category')
+                ->withCount(['reactions', 'comments'])
+                ->when($limit, function ($query) use ($limit) {
+                    return $query->take($limit);
+                })
+                ->when($banner, function ($query) use ($banner) {
+                    return $query->where('banner', boolval($banner));
+                });
 
-        if ($request->title) {
-            $query->where('title', 'like', '%' . $request->title . '%');
-        }
+            if ($request->closed) {
+                $query->where('closed', 'like', $request->closed);
+            }
 
-        if ($request->category) {
-            $query->where('category_id', $request->category);
-        }
+            if ($request->title) {
+                $query->where('title', 'like', '%' . $request->title . '%');
+            }
 
-        if ($request->createdAt) {
-            $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
-            $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-            $query->whereBetween('created_at', [$startDate, $endDate]);
-        }
+            if ($request->category) {
+                $query->where('category_id', $request->category);
+            }
 
-        $forums = $query->get();
+            if ($request->createdAt) {
+                $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+                $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            }
 
-        $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
-        foreach ($forums as $f) {
-            $f->setAttribute('canDeleteComments', $canDelete);
-        }
+            $forums = $query->get();
+
+            $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
+            foreach ($forums as $f) {
+                $f->setAttribute('canDeleteComments', $canDelete);
+            }
+
+            return $forums;
+        });
 
         return response()->json($forums, 200);
     }
@@ -122,6 +131,9 @@ class ForumsController extends Controller
             }
 
             $response = $forum->load('category', 'creator', 'tags');
+
+            $this->flushCacheTag('forums');
+
             return response()->json($response, 200);
         } catch (\Throwable $th) {
             return response($th->getMessage(), 500);
@@ -164,6 +176,9 @@ class ForumsController extends Controller
             }
 
             $response = $forum->load('category', 'creator', 'tags');
+
+            $this->flushCacheTag('forums');
+
             return response()->json($response, 200);
         } catch (\Throwable $th) {
             return response($th->getMessage(), 500);
@@ -180,6 +195,9 @@ class ForumsController extends Controller
         $this->authorize('delete', $forum);
         
         $forum->delete();
+
+        $this->flushCacheTag('forums');
+
         return response()->json('successfully deleted', 200);
     }
 
@@ -224,6 +242,8 @@ class ForumsController extends Controller
             'comments',
             'comments.user'
         );
+
+        $this->flushCacheTag('forums');
 
         return response()->json($response, 200);
     }
@@ -316,6 +336,8 @@ class ForumsController extends Controller
             'comments.user'
         );
 
+        $this->flushCacheTag('forums');
+
         return response()->json($response, 200);
     }
 
@@ -368,6 +390,8 @@ class ForumsController extends Controller
             } catch (\Throwable $th) {
                 Log::error('Audit trail creation failed: ' . $th->getMessage());
             }
+
+            $this->flushCacheTag('forums');
 
             return response()->json([
                 'success' => true,

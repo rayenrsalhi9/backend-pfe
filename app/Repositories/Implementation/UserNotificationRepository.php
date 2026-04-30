@@ -7,6 +7,7 @@ use App\Repositories\Contracts\UserNotificationRepositoryInterface;
 use Illuminate\Support\Facades\Auth;
 use App\Repositories\Implementation\BaseRepository;
 use App\Repositories\Exceptions\RepositoryException;
+use App\Traits\CacheableTrait;
 
 //use Your Model
 
@@ -15,6 +16,8 @@ use App\Repositories\Exceptions\RepositoryException;
  */
 class UserNotificationRepository extends BaseRepository implements UserNotificationRepositoryInterface
 {
+    use CacheableTrait;
+
     /**
      * @var Model
      */
@@ -42,24 +45,29 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
                 return [];
             }
 
-            $results = UserNotifications::where('userId', '=', $userId)
-                ->orderBy('isRead', 'DESC')
-                ->orderBy('createdDate', 'DESC')
-                ->with('user')
-                ->with(['documents' => function ($query) {
-                    $query->withoutGlobalScope('isDeleted');
-                }])
-                ->take(10)
-                ->get();
+            $cacheKey = $this->getCacheKey('notifications', 'top10', $userId);
+            $ttl = $this->getCacheTtl('notifications');
 
-            foreach ($results as $notification) {
-                if ($notification->documentId && $notification->documents && $notification->documents->isDeleted) {
-                    $notification->message = $notification->message . ' [Event deleted]';
-                    $notification->documentId = null;
+            return $this->cacheRemember($cacheKey, 'notifications', $ttl, function () use ($userId) {
+                $results = UserNotifications::where('userId', '=', $userId)
+                    ->orderBy('isRead', 'DESC')
+                    ->orderBy('createdDate', 'DESC')
+                    ->with('user')
+                    ->with(['documents' => function ($query) {
+                        $query->withoutGlobalScope('isDeleted');
+                    }])
+                    ->take(10)
+                    ->get();
+
+                foreach ($results as $notification) {
+                    if ($notification->documentId && $notification->documents && $notification->documents->isDeleted) {
+                        $notification->message = $notification->message . ' [Event deleted]';
+                        $notification->documentId = null;
+                    }
                 }
-            }
 
-            return $results;
+                return $results;
+            });
         } catch (\Exception $e) {
             \Log::error('getTop10Notification error: ' . $e->getMessage());
             return [];

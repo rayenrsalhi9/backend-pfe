@@ -15,10 +15,12 @@ use App\Repositories\Contracts\DocumentRepositoryInterface;
 use App\Repositories\Contracts\DocumentTokenRepositoryInterface;
 use App\Repositories\Contracts\DocumentMetaDataRepositoryInterface;
 use App\Repositories\Contracts\UserNotificationRepositoryInterface;
+use App\Traits\CacheableTrait;
 
 class DocumentController extends Controller
 {
     use \App\Http\Controllers\Traits\HasPermissionTrait;
+    use CacheableTrait;
     private $documentRepository;
     private  $documentMetaDataRepository;
     private $documenTokenRepository;

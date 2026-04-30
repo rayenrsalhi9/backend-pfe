@@ -12,11 +12,13 @@ use Illuminate\Notifications\Notifiable;
 use App\Traits\Uuids;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\User;
+use App\Traits\ClearsCacheTrait;
 
 class Roles extends Model
 {
     use HasFactory, SoftDeletes;
     use Notifiable, Uuids;
+    use ClearsCacheTrait;
     protected $primaryKey = "id";
 
     const CREATED_AT = 'createdDate';
