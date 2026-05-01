@@ -62,13 +62,13 @@ class ForumsController extends Controller
 
             $forums = $query->get();
 
-            $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
-            foreach ($forums as $f) {
-                $f->setAttribute('canDeleteComments', $canDelete);
-            }
-
             return $forums;
         });
+
+        $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
+        foreach ($forums as $f) {
+            $f->setAttribute('canDeleteComments', $canDelete);
+        }
 
         return response()->json($forums, 200);
     }

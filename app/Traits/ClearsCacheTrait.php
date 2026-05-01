@@ -25,18 +25,30 @@ trait ClearsCacheTrait
 
     protected function getEntityName(): string
     {
-        return strtolower(class_basename($this));
+        $name = class_basename($this);
+        if ($name === 'RoleClaims') return 'claims';
+        if ($name === 'UserNotifications') return 'notifications';
+        return strtolower($name);
+    }
+
+    protected function taggedStore(array $tags)
+    {
+        try {
+            return Cache::tags($tags);
+        } catch (\BadMethodCallException $e) {
+            return Cache::store(config('cache.taggable_store', 'redis'))->tags($tags);
+        }
     }
 
     protected function clearEntityCache(): void
     {
         $entity = $this->getEntityName();
-        Cache::tags([$entity])->flush();
+        $this->taggedStore([$entity])->flush();
     }
 
     protected function clearItemCache(): void
     {
         $entity = $this->getEntityName();
-        Cache::tags([$entity])->forget("{$entity}:{$this->id}");
+        $this->taggedStore([$entity])->forget("{$entity}:{$this->id}");
     }
 }

@@ -110,15 +110,19 @@ class RoleRepository extends BaseRepository implements RoleRepositoryInterface
 
             $result = $this->parseResult($model);
             DB::commit();
-
-            $this->flushCacheTag('roles');
-
-            return $result;
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'message' => 'Error in saving data.',
             ], 409);
         }
+
+        try {
+            $this->flushCacheTag('roles');
+        } catch (\Exception $e) {
+            \Log::error('Cache flush failed: ' . $e->getMessage());
+        }
+
+        return $result;
     }
 }

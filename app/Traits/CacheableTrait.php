@@ -30,21 +30,32 @@ trait CacheableTrait
 
     protected function getCacheKey(string $entity, ...$params): string
     {
-        return strtolower($entity) . ':' . implode(':', array_filter($params));
+        $filtered = array_filter($params, function ($v) { return $v !== null && $v !== ''; });
+        $mapped = array_map(function ($v) { return is_bool($v) ? ($v ? '1' : '0') : (string)$v; }, $filtered);
+        return strtolower($entity) . ':' . implode(':', $mapped);
+    }
+
+    protected function taggedStore(array $tags)
+    {
+        try {
+            return Cache::tags($tags);
+        } catch (\BadMethodCallException $e) {
+            return Cache::store(config('cache.taggable_store', 'redis'))->tags($tags);
+        }
     }
 
     protected function cacheRemember(string $key, string $tag, int $ttl, \Closure $callback)
     {
-        return Cache::tags([$tag])->remember($key, $ttl, $callback);
+        return $this->taggedStore([$tag])->remember($key, $ttl, $callback);
     }
 
     protected function cacheForget(string $key, string $tag): void
     {
-        Cache::tags([$tag])->forget($key);
+        $this->taggedStore([$tag])->forget($key);
     }
 
     protected function flushCacheTag(string $tag): void
     {
-        Cache::tags([$tag])->flush();
+        $this->taggedStore([$tag])->flush();
     }
 }

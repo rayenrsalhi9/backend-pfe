@@ -84,13 +84,13 @@ class BlogsController extends Controller
 
             $blog = $query->get();
 
-            $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
-            foreach ($blog as $b) {
-                $b->setAttribute('canDeleteComments', $canDelete);
-            }
-
             return $blog;
         });
+
+        $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
+        foreach ($blog as $b) {
+            $b->setAttribute('canDeleteComments', $canDelete);
+        }
 
         return response()->json($blog, 200);
     }

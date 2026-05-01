@@ -52,15 +52,19 @@ class UserClaimRepository extends BaseRepository implements UserClaimRepositoryI
             }
             $this->resetModel();
             DB::commit();
-
-            $this->flushCacheTag('claims');
-
-            return [];
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'message' => 'Error in saving data.',
             ], 409);
         }
+
+        try {
+            $this->flushCacheTag('claims');
+        } catch (\Exception $e) {
+            \Log::error('Cache flush failed: ' . $e->getMessage());
+        }
+
+        return [];
     }
 }

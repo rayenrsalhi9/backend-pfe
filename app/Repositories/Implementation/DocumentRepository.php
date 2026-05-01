@@ -45,7 +45,7 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
 
     public function getDocuments($attributes, $includeCreatorEmail = false)
     {
-        $cacheKey = $this->getCacheKey('documents', 'list', md5(json_encode((array)$attributes)));
+        $cacheKey = $this->getCacheKey('documents', 'list', md5(json_encode((array)$attributes)), $includeCreatorEmail);
         $ttl = $this->getCacheTtl('documents');
 
         return $this->cacheRemember($cacheKey, 'documents', $ttl, function () use ($attributes, $includeCreatorEmail) {
@@ -299,16 +299,20 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             }
 
             DB::commit();
-             
-            $this->flushCacheTag('documents');
-
-            return $result;
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'message' => 'Error in saving data.',
             ], 409);
         }
+
+        try {
+            $this->flushCacheTag('documents');
+        } catch (\Exception $e) {
+            \Log::error('Cache flush failed: ' . $e->getMessage());
+        }
+
+        return $result;
     }
 
     public function assignedDocuments($attributes, $includeCreatorEmail = false)

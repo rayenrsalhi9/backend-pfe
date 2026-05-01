@@ -45,7 +45,8 @@ class ArticlesController extends Controller
   function getAll(Request $request)
   {
 
-    $cacheKey = $this->getCacheKey('articles', 'list', md5(json_encode($request->all())));
+    $viewer = Auth::id() ?? 'guest';
+    $cacheKey = $this->getCacheKey('articles', 'list', md5(json_encode($request->all())), $viewer);
     $ttl = $this->getCacheTtl('articles');
 
     $articles = $this->cacheRemember($cacheKey, 'articles', $ttl, function () use ($request) {
@@ -91,13 +92,13 @@ class ArticlesController extends Controller
 
       $articles = $query->get();
 
-      $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
-      foreach ($articles as $a) {
-        $a->setAttribute('canDeleteComments', $canDelete);
-      }
-
       return $articles;
     });
+
+    $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
+    foreach ($articles as $a) {
+      $a->setAttribute('canDeleteComments', $canDelete);
+    }
 
     return response()->json($articles, 200);
   }

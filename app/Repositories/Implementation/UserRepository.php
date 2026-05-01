@@ -110,16 +110,20 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
 
             $result = $this->parseResult($model);
             DB::commit();
-
-            $this->flushCacheTag('users');
-
-            return $result;
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'message' => 'Error in saving data.',
             ], 409);
         }
+
+        try {
+            $this->flushCacheTag('users');
+        } catch (\Exception $e) {
+            \Log::error('Cache flush failed: ' . $e->getMessage());
+        }
+
+        return $result;
     }
 
     private function saveProfileAvatar($image_64)

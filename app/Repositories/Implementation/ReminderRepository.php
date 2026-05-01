@@ -120,7 +120,9 @@ if (isset($attributes->description) && $attributes->description) {
         $model->deletedBy = $userId;
         $model->deleted_at = Carbon::now();
 
-        return $model->save();
+        $saved = $model->save();
+        $this->flushCacheTag('calendar');
+        return $saved;
     }
 
     public function addReminders($request)
@@ -208,6 +210,7 @@ if (isset($attributes->description) && $attributes->description) {
                 $this->triggerPusherNotification($payload['userId'], $payload['message'], $model->id);
             }
 
+            $this->flushCacheTag('calendar');
             return $saved;
         } catch (RepositoryException $e) {
             DB::rollBack();
@@ -344,6 +347,7 @@ if (isset($attributes->description) && $attributes->description) {
                 $this->triggerPusherNotification($payload['userId'], $payload['message'], $model->id);
             }
 
+            $this->flushCacheTag('calendar');
             return $this->parseResult($model);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             DB::rollBack();

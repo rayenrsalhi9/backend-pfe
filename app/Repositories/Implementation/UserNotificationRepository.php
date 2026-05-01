@@ -201,6 +201,8 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
 
         $query->update(['isRead' => true]);
 
+        $this->flushCacheTag('notifications');
+
         return;
     }
 
