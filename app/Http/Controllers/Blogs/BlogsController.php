@@ -67,8 +67,10 @@ class BlogsController extends Controller
                 });
 
             if ($request->title) {
-                $query->where('title', 'like', '%' . $request->title . '%')
-                    ->orWhere('subtitle',  'like', '%' . $request->title . '%');
+                $query->where(function($q) use ($request) {
+                    $q->where('title', 'like', '%' . $request->title . '%')
+                      ->orWhere('subtitle',  'like', '%' . $request->title . '%');
+                });
             }
 
             if ($request->category) {

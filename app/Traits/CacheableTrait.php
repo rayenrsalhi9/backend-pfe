@@ -46,16 +46,29 @@ trait CacheableTrait
 
     protected function cacheRemember(string $key, string $tag, int $ttl, \Closure $callback)
     {
-        return $this->taggedStore([$tag])->remember($key, $ttl, $callback);
+        try {
+            return $this->taggedStore([$tag])->remember($key, $ttl, $callback);
+        } catch (\Throwable $e) {
+            \Log::error('Cache remember failed: ' . $e->getMessage());
+            return $callback();
+        }
     }
 
     protected function cacheForget(string $key, string $tag): void
     {
-        $this->taggedStore([$tag])->forget($key);
+        try {
+            $this->taggedStore([$tag])->forget($key);
+        } catch (\Throwable $e) {
+            \Log::error('Cache forget failed: ' . $e->getMessage());
+        }
     }
 
     protected function flushCacheTag(string $tag): void
     {
-        $this->taggedStore([$tag])->flush();
+        try {
+            $this->taggedStore([$tag])->flush();
+        } catch (\Throwable $e) {
+            \Log::error('Cache flush failed: ' . $e->getMessage());
+        }
     }
 }

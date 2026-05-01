@@ -42,8 +42,8 @@ class ForumsController extends Controller
                     return $query->where('banner', boolval($banner));
                 });
 
-            if ($request->closed) {
-                $query->where('closed', 'like', $request->closed);
+            if ($request->has('closed')) {
+                $query->where('closed', filter_var($request->closed, FILTER_VALIDATE_BOOLEAN));
             }
 
             if ($request->title) {

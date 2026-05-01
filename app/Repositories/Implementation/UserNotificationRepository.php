@@ -161,6 +161,8 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
         if (!$saved) {
             throw new RepositoryException('Error in saving data.');
         }
+
+        $this->flushCacheTag('notifications');
         return $result;
     }
 
@@ -220,6 +222,8 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
             $userNotification->isRead = true;
             $userNotification->save();
         }
+
+        $this->flushCacheTag('notifications');
         return;
     }
 }
