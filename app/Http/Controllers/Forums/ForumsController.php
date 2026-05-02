@@ -37,10 +37,14 @@ class ForumsController extends Controller
                 ->withCount(['reactions', 'comments'])
                 ->when($limit, function ($query) use ($limit) {
                     return $query->take($limit);
-                })
-                ->when($banner, function ($query) use ($banner) {
-                    return $query->where('banner', boolval($banner));
                 });
+
+            if ($request->has('banner')) {
+                $parsedBanner = filter_var($request->banner, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                if ($parsedBanner !== null) {
+                    $query->where('banner', $parsedBanner);
+                }
+            }
 
             if ($request->has('closed')) {
                 $bool = filter_var($request->closed, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);

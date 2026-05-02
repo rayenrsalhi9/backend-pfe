@@ -67,6 +67,6 @@ trait ClearsCacheTrait
     protected function clearItemCache(): void
     {
         $entity = $this->getEntityName();
-        $this->taggedStore([$entity])->forget("{$entity}:{$this->id}");
+        $this->taggedStore([$entity])->forget("{$entity}:item:{$this->id}");
     }
 }

@@ -61,10 +61,14 @@ class BlogsController extends Controller
                 ->withCount(['comments', 'reactions', 'reactionsUp', 'reactionsDown'])
                 ->when($limit, function ($query) use ($limit) {
                     return $query->take($limit);
-                })
-                ->when($request->has('banner'), function ($query) use ($request) {
-                    return $query->where('banner', filter_var($request->banner, FILTER_VALIDATE_BOOLEAN));
                 });
+
+            if ($request->has('banner')) {
+                $rawBanner = strtolower(trim((string)$request->banner));
+                if (in_array($rawBanner, ['1', '0', 'true', 'false', 'on', 'off'], true)) {
+                    $query->where('banner', filter_var($rawBanner, FILTER_VALIDATE_BOOLEAN));
+                }
+            }
 
             if ($request->title) {
                 $query->where(function($q) use ($request) {
