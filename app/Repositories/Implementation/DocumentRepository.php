@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 use App\Repositories\Implementation\BaseRepository;
 use App\Repositories\Contracts\DocumentRepositoryInterface;
 use App\Repositories\Exceptions\RepositoryException;
-
+use App\Traits\CacheableTrait;
 //use Your Model
 
 /**
@@ -24,6 +24,8 @@ use App\Repositories\Exceptions\RepositoryException;
  */
 class DocumentRepository extends BaseRepository implements DocumentRepositoryInterface
 {
+    use CacheableTrait;
+
     /**
      * @var Model
      */
@@ -43,60 +45,65 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
 
     public function getDocuments($attributes, $includeCreatorEmail = false)
     {
-        $selectColumns = ['documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName', DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName")];
+        $cacheKey = $this->getCacheKey('documents', 'list', md5(json_encode((array)$attributes)), $includeCreatorEmail);
+        $ttl = $this->getCacheTtl('documents');
+
+        return $this->cacheRemember($cacheKey, 'documents', $ttl, function () use ($attributes, $includeCreatorEmail) {
+            $selectColumns = ['documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName', DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName")];
         
-        if ($includeCreatorEmail) {
-            $selectColumns[] = 'users.email as createdByEmail';
-        }
+            if ($includeCreatorEmail) {
+                $selectColumns[] = 'users.email as createdByEmail';
+            }
 
-        $query = Documents::select($selectColumns)
-            ->join('categories', 'documents.categoryId', '=', 'categories.id')
-            ->join('users', 'documents.createdBy', '=', 'users.id');
+            $query = Documents::select($selectColumns)
+                ->join('categories', 'documents.categoryId', '=', 'categories.id')
+                ->join('users', 'documents.createdBy', '=', 'users.id');
 
-        $orderByArray =  explode(' ', $attributes->orderBy);
-        $orderBy = $orderByArray[0];
-        $direction = $orderByArray[1] ?? 'asc';
+            $orderByArray = explode(' ', $attributes->orderBy);
+            $orderBy = $orderByArray[0];
+            $direction = $orderByArray[1] ?? 'asc';
 
-        if ($orderBy == 'categoryName') {
-            $query = $query->orderBy('categories.name', $direction);
-        } else if ($orderBy == 'name') {
-            $query = $query->orderBy('documents.name', $direction);
-        } else if ($orderBy == 'createdDate') {
-            $query = $query->orderBy('documents.createdDate', $direction);
-        } else if ($orderBy == 'createdBy') {
-            $query = $query->orderBy('users.firstName', $direction);
-        }
+            if ($orderBy == 'categoryName') {
+                $query = $query->orderBy('categories.name', $direction);
+            } else if ($orderBy == 'name') {
+                $query = $query->orderBy('documents.name', $direction);
+            } else if ($orderBy == 'createdDate') {
+                $query = $query->orderBy('documents.createdDate', $direction);
+            } else if ($orderBy == 'createdBy') {
+                $query = $query->orderBy('users.firstName', $direction);
+            }
 
-        if ($attributes->categoryId) {
-            $query = $query->where('categoryId', $attributes->categoryId);
-        }
+            if ($attributes->categoryId) {
+                $query = $query->where('categoryId', $attributes->categoryId);
+            }
 
-        if ($attributes->name) {
-            $query = $query->where('documents.name', 'like', '%' . $attributes->name . '%')
-                ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
-        }
+            if ($attributes->name) {
+                $query = $query->where('documents.name', 'like', '%' . $attributes->name . '%')
+                    ->orWhere('documents.description', 'like', '%' . $attributes->name . '%');
+            }
 
-        if ($attributes->metaTags) {
-            $metaTags = $attributes->metaTags;
-            $query = $query->whereExists(function ($query) use ($metaTags) {
-                $query->select(DB::raw(1))
-                    ->from('documentMetaDatas')
-                    ->whereRaw('documentMetaDatas.documentId = documents.id')
-                    ->where('documentMetaDatas.metatag', 'like', '%' . $metaTags . '%');
-            });
-        }
+            if ($attributes->metaTags) {
+                $metaTags = $attributes->metaTags;
+                $query = $query->whereExists(function ($query) use ($metaTags) {
+                    $query->select(DB::raw(1))
+                        ->from('documentMetaDatas')
+                        ->whereRaw('documentMetaDatas.documentId = documents.id')
+                        ->where('documentMetaDatas.metatag', 'like', '%' . $metaTags . '%');
+                });
+            }
 
-        if ($attributes->createDateString) {
+            if ($attributes->createDateString) {
 
-            $startDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC');
-            $endDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+                $startDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC');
+                $endDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
 
-            $query = $query->whereBetween('documents.createdDate', [$startDate, $endDate]);
-        }
+                $query = $query->whereBetween('documents.createdDate', [$startDate, $endDate]);
+            }
 
         $results = $query->skip($attributes->skip)->take($attributes->pageSize)->get();
 
-        return $results;
+            return $results;
+        });
     }
 
     public function getDocumentsCount($attributes)
@@ -292,13 +299,20 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             }
 
             DB::commit();
-            return $result;;
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'message' => 'Error in saving data.',
             ], 409);
         }
+
+        try {
+            $this->flushCacheTag('documents');
+        } catch (\Exception $e) {
+            \Log::error('Cache flush failed: ' . $e->getMessage());
+        }
+
+        return $result;
     }
 
     public function assignedDocuments($attributes, $includeCreatorEmail = false)

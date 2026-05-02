@@ -17,9 +17,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use Pusher\Pusher;
+use App\Traits\CacheableTrait;
 
 class ReminderRepository extends BaseRepository implements ReminderRepositoryInterface
 {
+    use CacheableTrait;
+
     protected $model;
 
     public static function model()
@@ -117,7 +120,9 @@ if (isset($attributes->description) && $attributes->description) {
         $model->deletedBy = $userId;
         $model->deleted_at = Carbon::now();
 
-        return $model->save();
+        $saved = $model->save();
+        $this->flushCacheTag('calendar');
+        return $saved;
     }
 
     public function addReminders($request)
@@ -205,6 +210,7 @@ if (isset($attributes->description) && $attributes->description) {
                 $this->triggerPusherNotification($payload['userId'], $payload['message'], $model->id);
             }
 
+            $this->flushCacheTag('calendar');
             return $saved;
         } catch (RepositoryException $e) {
             DB::rollBack();
@@ -341,6 +347,7 @@ if (isset($attributes->description) && $attributes->description) {
                 $this->triggerPusherNotification($payload['userId'], $payload['message'], $model->id);
             }
 
+            $this->flushCacheTag('calendar');
             return $this->parseResult($model);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             DB::rollBack();
@@ -468,114 +475,118 @@ if (isset($attributes->description) && $attributes->description) {
             throw new \Illuminate\Auth\Access\AuthorizationException('Unauthenticated user');
         }
 
-        $monthStartDate = new \DateTime();
-        $monthStartDate->setDate($year, $month, 1);
-        $monthEndDate = (clone $monthStartDate)->modify('+1 month')->modify('-1 day');
+        $cacheKey = "calendar:events:{$userId}:{$month}:{$year}";
 
-        $monthStartStr = $monthStartDate->format('Y-m-d');
-        $monthEndStr = $monthEndDate->format('Y-m-d');
+        return $this->cacheRemember($cacheKey, 'calendar', $this->getCacheTtl('calendar'), function () use ($month, $year, $userId) {
+            $monthStartDate = new \DateTime();
+            $monthStartDate->setDate($year, $month, 1);
+            $monthEndDate = (clone $monthStartDate)->modify('+1 month')->modify('-1 day');
 
-        $events = [];
+            $monthStartStr = $monthStartDate->format('Y-m-d');
+            $monthEndStr = $monthEndDate->format('Y-m-d');
 
-        $reminders = Reminders::select(['reminders.*'])
-            ->where('reminders.isDeleted', '=', 0)
-            ->with(['reminderUsers', 'dailyReminders', 'quarterlyReminders', 'halfYearlyReminders'])
-            ->where(function ($q) use ($userId) {
-                $q->where('createdBy', $userId)
-                    ->orWhereExists(function ($query) use ($userId) {
-                        $query->select(DB::raw(1))
-                            ->from('reminderUsers')
-                            ->whereRaw('reminderUsers.reminderId = reminders.id')
-                            ->where('reminderUsers.userId', '=', $userId);
-                    });
-            })
-            ->where(function ($q) use ($monthStartStr, $monthEndStr) {
-                $q->where(function ($sub) use ($monthStartStr, $monthEndStr) {
-                    $sub->where('reminders.frequency', FrequencyEnum::OneTime->value)
-                        ->whereBetween('reminders.startDate', [$monthStartStr, $monthEndStr . ' 23:59:59']);
-                })
-                ->orWhere(function ($sub) use ($monthStartStr, $monthEndStr) {
-                    $sub->where('reminders.isRepeated', '=', 1)
-                        ->where('reminders.startDate', '<=', $monthEndStr . ' 23:59:59')
-                        ->where(function ($inner) use ($monthStartStr, $monthEndStr) {
-                            $inner->where(function ($daily) use ($monthStartStr) {
-                                $daily->where('reminders.frequency', FrequencyEnum::Daily->value)
-                                    ->where(function ($q) use ($monthStartStr) {
-                                        $q->where('reminders.endDate', '>=', $monthStartStr)
-                                            ->orWhereNull('reminders.endDate');
-                                    });
-                            })
-                            ->orWhere(function ($weekly) use ($monthStartStr) {
-                                $weekly->where('reminders.frequency', FrequencyEnum::Weekly->value)
-                                    ->where(function ($q) use ($monthStartStr) {
-                                        $q->where('reminders.endDate', '>=', $monthStartStr)
-                                            ->orWhereNull('reminders.endDate');
-                                    });
-                            })
-                            ->orWhere(function ($monthly) use ($monthStartStr) {
-                                $monthly->where('reminders.frequency', FrequencyEnum::Monthly->value)
-                                    ->where(function ($q) use ($monthStartStr) {
-                                        $q->where('reminders.endDate', '>=', $monthStartStr)
-                                            ->orWhereNull('reminders.endDate');
-                                    });
-                            })
-                            ->orWhere(function ($quarterly) use ($monthStartStr, $monthEndStr) {
-                                $quarterly->where('reminders.frequency', FrequencyEnum::Quarterly->value)
-                                    ->where(function ($q) use ($monthStartStr, $monthEndStr) {
-                                        $q->whereHas('quarterlyReminders', function ($qRel) use ($monthStartStr, $monthEndStr) {
-                                            $qRel->whereRaw('MONTH(STR_TO_DATE(CONCAT(?, "-", month, "-", day), "%Y-%m-%d")) BETWEEN MONTH(?) AND MONTH(?)', [$monthStartStr, $monthStartStr, $monthEndStr]);
-                                        })->orWhereNull('reminders.endDate');
-                                    });
-                            })
-                            ->orWhere(function ($halfYearly) use ($monthStartStr, $monthEndStr) {
-                                $halfYearly->where('reminders.frequency', FrequencyEnum::HalfYearly->value)
-                                    ->where(function ($q) use ($monthStartStr, $monthEndStr) {
-                                        $q->whereHas('halfYearlyReminders', function ($qRel) use ($monthStartStr, $monthEndStr) {
-                                            $qRel->whereRaw('MONTH(STR_TO_DATE(CONCAT(?, "-", month, "-", day), "%Y-%m-%d")) BETWEEN MONTH(?) AND MONTH(?)', [$monthStartStr, $monthStartStr, $monthEndStr]);
-                                        })->orWhereNull('reminders.endDate');
-                                    });
-                            })
-                            ->orWhere(function ($yearly) use ($monthStartStr) {
-                                $yearly->where('reminders.frequency', FrequencyEnum::Yearly->value)
-                                    ->where(function ($q) use ($monthStartStr) {
-                                        $q->where('reminders.endDate', '>=', $monthStartStr)
-                                            ->orWhereNull('reminders.endDate');
-                                    });
-                            });
+            $events = [];
+
+            $reminders = Reminders::select(['reminders.*'])
+                ->where('reminders.isDeleted', '=', 0)
+                ->with(['reminderUsers', 'dailyReminders', 'quarterlyReminders', 'halfYearlyReminders'])
+                ->where(function ($q) use ($userId) {
+                    $q->where('createdBy', $userId)
+                        ->orWhereExists(function ($query) use ($userId) {
+                            $query->select(DB::raw(1))
+                                ->from('reminderUsers')
+                                ->whereRaw('reminderUsers.reminderId = reminders.id')
+                                ->where('reminderUsers.userId', '=', $userId);
                         });
-                });
-            })
-            ->get();
+                })
+                ->where(function ($q) use ($monthStartStr, $monthEndStr) {
+                    $q->where(function ($sub) use ($monthStartStr, $monthEndStr) {
+                        $sub->where('reminders.frequency', FrequencyEnum::OneTime->value)
+                            ->whereBetween('reminders.startDate', [$monthStartStr, $monthEndStr . ' 23:59:59']);
+                    })
+                    ->orWhere(function ($sub) use ($monthStartStr, $monthEndStr) {
+                        $sub->where('reminders.isRepeated', '=', 1)
+                            ->where('reminders.startDate', '<=', $monthEndStr . ' 23:59:59')
+                            ->where(function ($inner) use ($monthStartStr, $monthEndStr) {
+                                $inner->where(function ($daily) use ($monthStartStr) {
+                                    $daily->where('reminders.frequency', FrequencyEnum::Daily->value)
+                                        ->where(function ($q) use ($monthStartStr) {
+                                            $q->where('reminders.endDate', '>=', $monthStartStr)
+                                                ->orWhereNull('reminders.endDate');
+                                        });
+                                })
+                                ->orWhere(function ($weekly) use ($monthStartStr) {
+                                    $weekly->where('reminders.frequency', FrequencyEnum::Weekly->value)
+                                        ->where(function ($q) use ($monthStartStr) {
+                                            $q->where('reminders.endDate', '>=', $monthStartStr)
+                                                ->orWhereNull('reminders.endDate');
+                                        });
+                                })
+                                ->orWhere(function ($monthly) use ($monthStartStr) {
+                                    $monthly->where('reminders.frequency', FrequencyEnum::Monthly->value)
+                                        ->where(function ($q) use ($monthStartStr) {
+                                            $q->where('reminders.endDate', '>=', $monthStartStr)
+                                                ->orWhereNull('reminders.endDate');
+                                        });
+                                })
+                                ->orWhere(function ($quarterly) use ($monthStartStr, $monthEndStr) {
+                                    $quarterly->where('reminders.frequency', FrequencyEnum::Quarterly->value)
+                                        ->where(function ($q) use ($monthStartStr, $monthEndStr) {
+                                            $q->whereHas('quarterlyReminders', function ($qRel) use ($monthStartStr, $monthEndStr) {
+                                                $qRel->whereRaw('MONTH(STR_TO_DATE(CONCAT(?, "-", month, "-", day), "%Y-%m-%d")) BETWEEN MONTH(?) AND MONTH(?)', [$monthStartStr, $monthStartStr, $monthEndStr]);
+                                            })->orWhereNull('reminders.endDate');
+                                        });
+                                })
+                                ->orWhere(function ($halfYearly) use ($monthStartStr, $monthEndStr) {
+                                    $halfYearly->where('reminders.frequency', FrequencyEnum::HalfYearly->value)
+                                        ->where(function ($q) use ($monthStartStr, $monthEndStr) {
+                                            $q->whereHas('halfYearlyReminders', function ($qRel) use ($monthStartStr, $monthEndStr) {
+                                                $qRel->whereRaw('MONTH(STR_TO_DATE(CONCAT(?, "-", month, "-", day), "%Y-%m-%d")) BETWEEN MONTH(?) AND MONTH(?)', [$monthStartStr, $monthStartStr, $monthEndStr]);
+                                            })->orWhereNull('reminders.endDate');
+                                        });
+                                })
+                                ->orWhere(function ($yearly) use ($monthStartStr) {
+                                    $yearly->where('reminders.frequency', FrequencyEnum::Yearly->value)
+                                        ->where(function ($q) use ($monthStartStr) {
+                                            $q->where('reminders.endDate', '>=', $monthStartStr)
+                                                ->orWhereNull('reminders.endDate');
+                                        });
+                                });
+                            });
+                    });
+                })
+                ->get();
 
-        foreach ($reminders as $r) {
-            $reminderStart = new \DateTime($r->startDate);
-            $reminderStartTime = $reminderStart->format('H:i:s');
-            $reminderEnd = $r->endDate ? new \DateTime($r->endDate) : null;
-            $reminderEndTime = $reminderEnd ? $reminderEnd->format('H:i:s') : $reminderStartTime;
+            foreach ($reminders as $r) {
+                $reminderStart = new \DateTime($r->startDate);
+                $reminderStartTime = $reminderStart->format('H:i:s');
+                $reminderEnd = $r->endDate ? new \DateTime($r->endDate) : null;
+                $reminderEndTime = $reminderEnd ? $reminderEnd->format('H:i:s') : $reminderStartTime;
 
-            if ($r->frequency === FrequencyEnum::OneTime) {
-                if ($r->startDate >= $monthStartStr && $r->startDate <= $monthEndStr . ' 23:59:59') {
-                    $events[] = [
-                        'id' => $r->id,
-                        'title' => $r->eventName,
-                        'description' => $r->description,
-                        'start' => $r->startDate,
-                        'end' => $r->endDate ?? $r->startDate,
-                        'allDay' => false,
-                        'category' => $r->category ?? 'normal',
-                        'frequency' => FrequencyEnum::OneTime->value,
-                    ];
+                if ($r->frequency === FrequencyEnum::OneTime) {
+                    if ($r->startDate >= $monthStartStr && $r->startDate <= $monthEndStr . ' 23:59:59') {
+                        $events[] = [
+                            'id' => $r->id,
+                            'title' => $r->eventName,
+                            'description' => $r->description,
+                            'start' => $r->startDate,
+                            'end' => $r->endDate ?? $r->startDate,
+                            'allDay' => false,
+                            'category' => $r->category ?? 'normal',
+                            'frequency' => FrequencyEnum::OneTime->value,
+                        ];
+                    }
+                }
+
+                $reminderStartDateStr = $r->startDate;
+
+                if ($r->isRepeated == 1 && $reminderStartDateStr <= $monthEndStr . ' 23:59:59') {
+                    $this->expandRecurringReminder($r, $userId, $monthStartStr, $monthEndStr, $reminderStartTime, $reminderEndTime, $reminderStartDateStr, $events);
                 }
             }
 
-            $reminderStartDateStr = $r->startDate;
-
-            if ($r->isRepeated == 1 && $reminderStartDateStr <= $monthEndStr . ' 23:59:59') {
-                $this->expandRecurringReminder($r, $userId, $monthStartStr, $monthEndStr, $reminderStartTime, $reminderEndTime, $reminderStartDateStr, $events);
-            }
-        }
-
-        return $events;
+            return $events;
+        });
     }
 
     private function expandRecurringReminder($reminder, $userId, $monthStartStr, $monthEndStr, $startTime, $endTime, $reminderStartDateStr, &$events)

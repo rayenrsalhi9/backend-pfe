@@ -6,6 +6,7 @@ use App\Models\UserClaims;
 use App\Repositories\Implementation\BaseRepository;
 use App\Repositories\Contracts\UserClaimRepositoryInterface;
 use Illuminate\Support\Facades\DB;
+use App\Traits\CacheableTrait;
 //use Your Model
 
 /**
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\DB;
  */
 class UserClaimRepository extends BaseRepository implements UserClaimRepositoryInterface
 {
+    use CacheableTrait;
+
     /**
      * @var Model
      */
@@ -49,12 +52,19 @@ class UserClaimRepository extends BaseRepository implements UserClaimRepositoryI
             }
             $this->resetModel();
             DB::commit();
-            return [];
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'message' => 'Error in saving data.',
             ], 409);
         }
+
+        try {
+            $this->flushCacheTag('claims');
+        } catch (\Exception $e) {
+            \Log::error('Cache flush failed: ' . $e->getMessage());
+        }
+
+        return [];
     }
 }

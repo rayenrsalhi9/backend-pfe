@@ -7,7 +7,7 @@ use App\Models\Roles;
 use App\Repositories\Implementation\BaseRepository;
 use App\Repositories\Contracts\RoleRepositoryInterface;
 use Illuminate\Support\Facades\DB;
-
+use App\Traits\CacheableTrait;
 //use Your Model
 
 /**
@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\DB;
  */
 class RoleRepository extends BaseRepository implements RoleRepositoryInterface
 {
+    use CacheableTrait;
+
     /**
      * @var Model
      */
@@ -33,15 +35,27 @@ class RoleRepository extends BaseRepository implements RoleRepositoryInterface
 
     public function getRolesForDropdown()
     {
-        $roles = $this->model->get();
-        return $roles;
+        $cacheKey = $this->getCacheKey('roles', 'dropdown');
+        $ttl = $this->getCacheTtl('roles');
+
+        return $this->cacheRemember($cacheKey, 'roles', $ttl, function () {
+            $roles = $this->model->get();
+            return $roles;
+        });
     }
 
     public function findRole($id)
     {
-        $model = $this->model->with('roleClaims')->findOrFail($id);
-        $this->resetModel();
-        return $this->parseResult($model);
+        $cacheKey = $this->getCacheKey('roles', 'item', $id);
+        $ttl = $this->getCacheTtl('roles');
+
+        $model = $this->cacheRemember($cacheKey, 'roles', $ttl, function () use ($id) {
+            $model = $this->model->with('roleClaims')->findOrFail($id);
+            $this->resetModel();
+            return $this->parseResult($model);
+        });
+
+        return $model;
     }
 
     public function createRole(array $attributes)
@@ -96,12 +110,19 @@ class RoleRepository extends BaseRepository implements RoleRepositoryInterface
 
             $result = $this->parseResult($model);
             DB::commit();
-            return $result;
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'message' => 'Error in saving data.',
             ], 409);
         }
+
+        try {
+            $this->flushCacheTag('roles');
+        } catch (\Exception $e) {
+            \Log::error('Cache flush failed: ' . $e->getMessage());
+        }
+
+        return $result;
     }
 }

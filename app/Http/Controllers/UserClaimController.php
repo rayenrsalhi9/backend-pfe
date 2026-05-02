@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Repositories\Contracts\UserClaimRepositoryInterface;
+use App\Traits\CacheableTrait;
 
 class UserClaimController extends Controller
 {
+    use CacheableTrait;
     private $userclaimRepository;
 
     public function __construct(UserClaimRepositoryInterface $userclaimRepository)

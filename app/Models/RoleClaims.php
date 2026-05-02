@@ -5,10 +5,12 @@ namespace App\Models;
 use Ramsey\Uuid\Uuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Traits\ClearsCacheTrait;
 
 class RoleClaims extends Model
 {
     use HasFactory;
+    use ClearsCacheTrait;
     protected $primaryKey = "id";
     protected $keyType = 'string';
     public $incrementing = false;

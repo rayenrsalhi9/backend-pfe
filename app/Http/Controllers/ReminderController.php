@@ -4,12 +4,13 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Repositories\Contracts\ReminderRepositoryInterface;
-
 use App\Http\Controllers\Traits\HasPermissionTrait;
+use App\Traits\CacheableTrait;
 
 class ReminderController extends Controller
 {
     use HasPermissionTrait;
+    use CacheableTrait;
     private $reminderRepository;
     protected $queryString;
 

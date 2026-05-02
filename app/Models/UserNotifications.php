@@ -7,11 +7,13 @@ use Illuminate\Notifications\Notifiable;
 use App\Traits\Uuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Traits\ClearsCacheTrait;
 
 class UserNotifications extends Model
 {
     use HasFactory;
     use Notifiable, Uuids;
+    use ClearsCacheTrait;
     protected $primaryKey = "id";
     public $table = 'userNotifications';
     // public $timestamps = false;

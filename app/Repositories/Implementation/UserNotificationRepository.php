@@ -7,6 +7,7 @@ use App\Repositories\Contracts\UserNotificationRepositoryInterface;
 use Illuminate\Support\Facades\Auth;
 use App\Repositories\Implementation\BaseRepository;
 use App\Repositories\Exceptions\RepositoryException;
+use App\Traits\CacheableTrait;
 
 //use Your Model
 
@@ -15,6 +16,8 @@ use App\Repositories\Exceptions\RepositoryException;
  */
 class UserNotificationRepository extends BaseRepository implements UserNotificationRepositoryInterface
 {
+    use CacheableTrait;
+
     /**
      * @var Model
      */
@@ -42,15 +45,20 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
                 return [];
             }
 
-            $results = UserNotifications::where('userId', '=', $userId)
-                ->orderBy('isRead', 'DESC')
-                ->orderBy('createdDate', 'DESC')
-                ->with('user')
-                ->with(['documents' => function ($query) {
-                    $query->withoutGlobalScope('isDeleted');
-                }])
-                ->take(10)
-                ->get();
+            $cacheKey = $this->getCacheKey('notifications', 'top10', $userId);
+            $ttl = $this->getCacheTtl('notifications');
+
+            $results = $this->cacheRemember($cacheKey, 'notifications', $ttl, function () use ($userId) {
+                return UserNotifications::where('userId', '=', $userId)
+                    ->orderBy('isRead', 'DESC')
+                    ->orderBy('createdDate', 'DESC')
+                    ->with('user')
+                    ->with(['documents' => function ($query) {
+                        $query->withoutGlobalScope('isDeleted');
+                    }])
+                    ->take(10)
+                    ->get();
+            });
 
             foreach ($results as $notification) {
                 if ($notification->documentId && $notification->documents && $notification->documents->isDeleted) {
@@ -153,6 +161,8 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
         if (!$saved) {
             throw new RepositoryException('Error in saving data.');
         }
+
+        $this->flushCacheTag('notifications');
         return $result;
     }
 
@@ -193,6 +203,8 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
 
         $query->update(['isRead' => true]);
 
+        $this->flushCacheTag('notifications');
+
         return;
     }
 
@@ -210,6 +222,8 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
             $userNotification->isRead = true;
             $userNotification->save();
         }
+
+        $this->flushCacheTag('notifications');
         return;
     }
 }

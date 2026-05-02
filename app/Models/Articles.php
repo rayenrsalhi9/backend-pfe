@@ -7,11 +7,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use PhpParser\Builder\Use_;
+use App\Traits\ClearsCacheTrait;
 
 class Articles extends Model
 {
     use HasFactory;
     use Notifiable, Uuids;
+    use ClearsCacheTrait;
 
     /**
      * The table associated with the model.

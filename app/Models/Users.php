@@ -13,11 +13,13 @@ use App\Traits\Uuids;
 use App\Models\Conversation;
 use App\Models\Message;
 use Illuminate\Database\Eloquent\Builder;
+use App\Traits\ClearsCacheTrait;
 
 class Users extends Authenticatable implements JWTSubject
 {
     use HasFactory;
     use Notifiable, Uuids;
+    use ClearsCacheTrait;
     protected $primaryKey = "id";
     public $timestamps = false;
 

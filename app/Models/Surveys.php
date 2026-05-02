@@ -6,11 +6,13 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Traits\Uuids;
 use Illuminate\Notifications\Notifiable;
+use App\Traits\ClearsCacheTrait;
 
 class Surveys extends Model
 {
     use HasFactory;
     use Notifiable, Uuids;
+    use ClearsCacheTrait;
 
     /**
      * The table associated with the model.

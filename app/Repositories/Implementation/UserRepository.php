@@ -10,6 +10,7 @@ use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\Exceptions\RepositoryException;
 use Illuminate\Support\Facades\DB;
 use Ramsey\Uuid\Uuid;
+use App\Traits\CacheableTrait;
 //use Your Model
 
 /**
@@ -17,6 +18,8 @@ use Ramsey\Uuid\Uuid;
  */
 class UserRepository extends BaseRepository implements UserRepositoryInterface
 {
+    use CacheableTrait;
+
     /**
      * @var Model
      */
@@ -61,15 +64,27 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
 
     public function getUsersForDropdown()
     {
-        $users = Users::select(['id', 'firstName', 'lastName', 'userName', 'email', 'avatar'])->get();
-        return $users;
+        $cacheKey = $this->getCacheKey('users', 'dropdown');
+        $ttl = $this->getCacheTtl('users');
+
+        return $this->cacheRemember($cacheKey, 'users', $ttl, function () {
+            $users = Users::select(['id', 'firstName', 'lastName', 'userName', 'email', 'avatar'])->get();
+            return $users;
+        });
     }
 
     public function findUser($id)
     {
-        $model = $this->model->with('userRoles')->with('userClaims')->findOrFail($id);
-        $this->resetModel();
-        return $this->parseResult($model);
+        $cacheKey = $this->getCacheKey('users', 'item', $id);
+        $ttl = $this->getCacheTtl('users');
+
+        $model = $this->cacheRemember($cacheKey, 'users', $ttl, function () use ($id) {
+            $model = $this->model->with('userRoles')->with('userClaims')->findOrFail($id);
+            $this->resetModel();
+            return $this->parseResult($model);
+        });
+
+        return $model;
     }
 
 
@@ -95,13 +110,20 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
 
             $result = $this->parseResult($model);
             DB::commit();
-            return $result;
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'message' => 'Error in saving data.',
             ], 409);
         }
+
+        try {
+            $this->flushCacheTag('users');
+        } catch (\Exception $e) {
+            \Log::error('Cache flush failed: ' . $e->getMessage());
+        }
+
+        return $result;
     }
 
     private function saveProfileAvatar($image_64)
@@ -148,6 +170,8 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
             $model->phoneNumber = $request->phoneNumber;
             $model->save();
             
+            $this->flushCacheTag('users');
+
             return [
                 'id' => $model->id,
                 'firstName' => $model->firstName,

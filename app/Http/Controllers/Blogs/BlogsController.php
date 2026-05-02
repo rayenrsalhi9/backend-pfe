@@ -4,11 +4,11 @@ namespace App\Http\Controllers\Blogs;
 
 use App\Models\Blogs;
 use Ramsey\Uuid\Uuid;
-use App\Models\ArticleUsers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\HasPermissionTrait;
+use App\Traits\CacheableTrait;
 use App\Models\BlogComments;
 use App\Models\BlogReactions;
 use App\Models\Tags;
@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Log;
 class BlogsController extends Controller
 {
     use HasPermissionTrait;
+    use CacheableTrait;
 
     private function saveFile($image_64)
     {
@@ -36,7 +37,7 @@ class BlogsController extends Controller
 
             $imageName = Uuid::uuid4() . '.' . $extension;
 
-            file_put_contents($destinationPath . $imageName,  base64_decode($image));
+            file_put_contents($destinationPath . $imageName, base64_decode($image));
             return 'images/' . $imageName;
         } catch (\Exception $e) {
             return '';
@@ -45,38 +46,51 @@ class BlogsController extends Controller
 
     function getAll(Request $request)
     {
-        $user = Auth::user();
-        $limit = $request->limit;
-        $banner = $request->banner;
-        $grouped = $request->grouped;
+        $cacheKey = $this->getCacheKey('blogs', 'list', md5(json_encode($request->all())));
+        $ttl = $this->getCacheTtl('blogs');
 
-        $query = Blogs::orderBy('created_at', 'DESC')
-            ->with('category', 'creator', 'tags')
-            ->withCount(['comments', 'reactions', 'reactionsUp', 'reactionsDown'])
-            ->when($limit, function ($query) use ($limit) {
-                return $query->take($limit);
-            })
-            ->when($banner, function ($query) use ($banner) {
-                return $query->where('banner', boolval($banner));
-            });
+        $blog = $this->cacheRemember($cacheKey, 'blogs', $ttl, function () use ($request) {
+            $user = Auth::user();
+            $limit = $request->limit;
+            $banner = $request->banner;
+            $grouped = $request->grouped;
 
-        if ($request->title) {
-            $query->where('title', 'like', '%' . $request->title . '%')
-                ->orWhere('subtitle',  'like', '%' . $request->title . '%');
-        }
+            $query = Blogs::orderBy('created_at', 'DESC')
+                ->with('category', 'creator', 'tags')
+                ->withCount(['comments', 'reactions', 'reactionsUp', 'reactionsDown'])
+                ->when($limit, function ($query) use ($limit) {
+                    return $query->take($limit);
+                });
 
-        if ($request->category) {
-            $query->where('category_id', $request->category);
-        }
+            if ($request->has('banner')) {
+                $rawBanner = strtolower(trim((string) $request->banner));
+                if (in_array($rawBanner, ['1', '0', 'true', 'false', 'on', 'off'], true)) {
+                    $query->where('banner', filter_var($rawBanner, FILTER_VALIDATE_BOOLEAN));
+                }
+            }
 
-        if ($request->createdAt) {
-            $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
-            $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+            if ($request->title) {
+                $query->where(function ($q) use ($request) {
+                    $q->where('title', 'like', '%' . $request->title . '%')
+                        ->orWhere('subtitle', 'like', '%' . $request->title . '%');
+                });
+            }
 
-            $query->whereBetween('created_at', [$startDate, $endDate]);
-        }
+            if ($request->category) {
+                $query->where('category_id', $request->category);
+            }
 
-        $blog = $query->get();
+            if ($request->createdAt) {
+                $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+                $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            }
+
+            $blog = $query->get();
+
+            return $blog;
+        });
 
         $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
         foreach ($blog as $b) {
@@ -88,7 +102,19 @@ class BlogsController extends Controller
 
     function getOne($id)
     {
-        $blog = Blogs::where('id', $id)->with('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user', 'tags')->withCount(['comments'])->first();
+        $cacheKey = $this->getCacheKey('blogs', 'item', $id);
+        $ttl = $this->getCacheTtl('blogs');
+
+        $blog = $this->cacheRemember($cacheKey, 'blogs', $ttl, function () use ($id) {
+            return Blogs::where('id', $id)
+                ->with('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user', 'tags')
+                ->withCount(['comments'])
+                ->first();
+        });
+
+        if (!$blog) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
 
         if ($blog) {
             $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
@@ -131,6 +157,8 @@ class BlogsController extends Controller
             }
 
             $response = $blog->load('category', 'creator', 'tags');
+
+            $this->flushCacheTag('blogs');
 
             return response()->json($response, 200);
         } catch (\Throwable $th) {
@@ -176,6 +204,8 @@ class BlogsController extends Controller
 
             $response = $blog->load('category', 'creator', 'tags');
 
+            $this->flushCacheTag('blogs');
+
             return response()->json($response, 200);
         } catch (\Throwable $th) {
             return response($th->getMessage(), 500);
@@ -186,6 +216,8 @@ class BlogsController extends Controller
     {
         $category = Blogs::where('id', $id)->first();
         $category->delete();
+
+        $this->flushCacheTag('blogs');
 
         return response()->json('successfully deleted', 200);
     }
@@ -203,6 +235,8 @@ class BlogsController extends Controller
         $comment->save();
 
         $response = $blog->load('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user');
+
+        $this->flushCacheTag('blogs');
 
         return response()->json($response, 200);
     }
@@ -237,6 +271,8 @@ class BlogsController extends Controller
         }
 
         $response = $blog->load('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user');
+
+        $this->flushCacheTag('blogs');
 
         return response()->json($response, 200);
     }
@@ -275,6 +311,8 @@ class BlogsController extends Controller
             $commentContent = $comment->comment;
 
             $comment->delete();
+
+            $this->flushCacheTag('blogs');
 
             // audit trail
             try {

@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Repositories\Contracts\UserNotificationRepositoryInterface;
 use Illuminate\Http\Request;
+use App\Traits\CacheableTrait;
 
 class UserNotificationController extends Controller
 {
+    use CacheableTrait;
     private $userNotificationRepository;
     protected $queryString;
 
