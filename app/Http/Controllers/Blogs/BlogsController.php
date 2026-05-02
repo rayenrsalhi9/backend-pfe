@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Blogs;
 
 use App\Models\Blogs;
 use Ramsey\Uuid\Uuid;
-use App\Models\ArticleUsers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use App\Http\Controllers\Controller;
@@ -38,7 +37,7 @@ class BlogsController extends Controller
 
             $imageName = Uuid::uuid4() . '.' . $extension;
 
-            file_put_contents($destinationPath . $imageName,  base64_decode($image));
+            file_put_contents($destinationPath . $imageName, base64_decode($image));
             return 'images/' . $imageName;
         } catch (\Exception $e) {
             return '';
@@ -64,16 +63,16 @@ class BlogsController extends Controller
                 });
 
             if ($request->has('banner')) {
-                $rawBanner = strtolower(trim((string)$request->banner));
+                $rawBanner = strtolower(trim((string) $request->banner));
                 if (in_array($rawBanner, ['1', '0', 'true', 'false', 'on', 'off'], true)) {
                     $query->where('banner', filter_var($rawBanner, FILTER_VALIDATE_BOOLEAN));
                 }
             }
 
             if ($request->title) {
-                $query->where(function($q) use ($request) {
+                $query->where(function ($q) use ($request) {
                     $q->where('title', 'like', '%' . $request->title . '%')
-                      ->orWhere('subtitle',  'like', '%' . $request->title . '%');
+                        ->orWhere('subtitle', 'like', '%' . $request->title . '%');
                 });
             }
 
@@ -112,6 +111,10 @@ class BlogsController extends Controller
                 ->withCount(['comments'])
                 ->first();
         });
+
+        if (!$blog) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
 
         if ($blog) {
             $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
