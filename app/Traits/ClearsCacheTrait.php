@@ -9,29 +9,35 @@ trait ClearsCacheTrait
     protected static function bootClearsCacheTrait(): void
     {
         static::created(function ($model) {
-            try {
-                $model->clearEntityCache();
-            } catch (\Throwable $e) {
-                \Log::error('Cache clear failed on created: ' . $e->getMessage(), ['class' => get_class($model), 'id' => $model->id ?? null]);
-            }
+            \DB::afterCommit(function () use ($model) {
+                try {
+                    $model->clearEntityCache();
+                } catch (\Throwable $e) {
+                    \Log::error('Cache clear failed on created: ' . $e->getMessage(), ['class' => get_class($model), 'id' => $model->id ?? null]);
+                }
+            });
         });
 
         static::updated(function ($model) {
-            try {
-                $model->clearEntityCache();
-                $model->clearItemCache();
-            } catch (\Throwable $e) {
-                \Log::error('Cache clear failed on updated: ' . $e->getMessage(), ['class' => get_class($model), 'id' => $model->id ?? null]);
-            }
+            \DB::afterCommit(function () use ($model) {
+                try {
+                    $model->clearEntityCache();
+                    $model->clearItemCache();
+                } catch (\Throwable $e) {
+                    \Log::error('Cache clear failed on updated: ' . $e->getMessage(), ['class' => get_class($model), 'id' => $model->id ?? null]);
+                }
+            });
         });
 
         static::deleted(function ($model) {
-            try {
-                $model->clearEntityCache();
-                $model->clearItemCache();
-            } catch (\Throwable $e) {
-                \Log::error('Cache clear failed on deleted: ' . $e->getMessage(), ['class' => get_class($model), 'id' => $model->id ?? null]);
-            }
+            \DB::afterCommit(function () use ($model) {
+                try {
+                    $model->clearEntityCache();
+                    $model->clearItemCache();
+                } catch (\Throwable $e) {
+                    \Log::error('Cache clear failed on deleted: ' . $e->getMessage(), ['class' => get_class($model), 'id' => $model->id ?? null]);
+                }
+            });
         });
     }
 

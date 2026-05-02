@@ -47,11 +47,24 @@ trait CacheableTrait
     protected function cacheRemember(string $key, string $tag, int $ttl, \Closure $callback)
     {
         try {
-            return $this->taggedStore([$tag])->remember($key, $ttl, $callback);
+            $store = $this->taggedStore([$tag]);
+            $value = $store->get($key);
+            if ($value !== null) {
+                return $value;
+            }
         } catch (\Throwable $e) {
-            \Log::error('Cache remember failed: ' . $e->getMessage());
-            return $callback();
+            \Log::error('Cache read failed: ' . $e->getMessage());
         }
+
+        $value = $callback();
+
+        try {
+            $this->taggedStore([$tag])->put($key, $value, $ttl);
+        } catch (\Throwable $e) {
+            \Log::error('Cache write failed: ' . $e->getMessage());
+        }
+
+        return $value;
     }
 
     protected function cacheForget(string $key, string $tag): void

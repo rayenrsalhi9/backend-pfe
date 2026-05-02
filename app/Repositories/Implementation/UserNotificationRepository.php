@@ -48,8 +48,8 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
             $cacheKey = $this->getCacheKey('notifications', 'top10', $userId);
             $ttl = $this->getCacheTtl('notifications');
 
-            return $this->cacheRemember($cacheKey, 'notifications', $ttl, function () use ($userId) {
-                $results = UserNotifications::where('userId', '=', $userId)
+            $results = $this->cacheRemember($cacheKey, 'notifications', $ttl, function () use ($userId) {
+                return UserNotifications::where('userId', '=', $userId)
                     ->orderBy('isRead', 'DESC')
                     ->orderBy('createdDate', 'DESC')
                     ->with('user')
@@ -58,16 +58,16 @@ class UserNotificationRepository extends BaseRepository implements UserNotificat
                     }])
                     ->take(10)
                     ->get();
-
-                foreach ($results as $notification) {
-                    if ($notification->documentId && $notification->documents && $notification->documents->isDeleted) {
-                        $notification->message = $notification->message . ' [Event deleted]';
-                        $notification->documentId = null;
-                    }
-                }
-
-                return $results;
             });
+
+            foreach ($results as $notification) {
+                if ($notification->documentId && $notification->documents && $notification->documents->isDeleted) {
+                    $notification->message = $notification->message . ' [Event deleted]';
+                    $notification->documentId = null;
+                }
+            }
+
+            return $results;
         } catch (\Exception $e) {
             \Log::error('getTop10Notification error: ' . $e->getMessage());
             return [];

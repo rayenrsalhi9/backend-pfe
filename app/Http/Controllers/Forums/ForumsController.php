@@ -43,7 +43,10 @@ class ForumsController extends Controller
                 });
 
             if ($request->has('closed')) {
-                $query->where('closed', filter_var($request->closed, FILTER_VALIDATE_BOOLEAN));
+                $bool = filter_var($request->closed, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                if ($bool !== null) {
+                    $query->where('closed', $bool);
+                }
             }
 
             if ($request->title) {

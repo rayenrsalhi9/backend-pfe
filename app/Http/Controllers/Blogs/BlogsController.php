@@ -62,8 +62,8 @@ class BlogsController extends Controller
                 ->when($limit, function ($query) use ($limit) {
                     return $query->take($limit);
                 })
-                ->when($banner, function ($query) use ($banner) {
-                    return $query->where('banner', boolval($banner));
+                ->when($request->has('banner'), function ($query) use ($request) {
+                    return $query->where('banner', filter_var($request->banner, FILTER_VALIDATE_BOOLEAN));
                 });
 
             if ($request->title) {
