@@ -12,6 +12,7 @@ use App\Traits\CacheableTrait;
 use App\Models\BlogComments;
 use App\Models\BlogReactions;
 use App\Models\Tags;
+use App\Models\BlogUsers;
 use App\Models\ResponseAuditTrails;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -56,18 +57,27 @@ class BlogsController extends Controller
             $grouped = $request->grouped;
 
             $query = Blogs::orderBy('created_at', 'DESC')
-                ->with('category', 'creator', 'tags')
+                ->with('category', 'creator', 'tags', 'allowedUsers')
                 ->withCount(['comments', 'reactions', 'reactionsUp', 'reactionsDown'])
+                ->where(function ($query) use ($user) {
+                    $query->where('privacy', 'public');
+                    if ($user) {
+                        $query->orWhere(function ($query) use ($user) {
+                            $query->where('privacy', 'private')
+                                ->where(function ($query) use ($user) {
+                                    $query->whereHas('allowedUsers', function ($query) use ($user) {
+                                        $query->where('user_id', $user->id);
+                                    });
+                                    $query->orWhere('created_by', $user->id);
+                                });
+                        });
+                    }
+                })
                 ->when($limit, function ($query) use ($limit) {
                     return $query->take($limit);
                 });
 
-            if ($request->has('banner')) {
-                $rawBanner = strtolower(trim((string) $request->banner));
-                if (in_array($rawBanner, ['1', '0', 'true', 'false', 'on', 'off'], true)) {
-                    $query->where('banner', filter_var($rawBanner, FILTER_VALIDATE_BOOLEAN));
-                }
-            }
+            // Banner filtering removed
 
             if ($request->title) {
                 $query->where(function ($q) use ($request) {
@@ -100,6 +110,46 @@ class BlogsController extends Controller
         return response()->json($blog, 200);
     }
 
+    function getAllForDashboard(Request $request)
+    {
+        $user = Auth::user();
+        $limit = $request->limit;
+
+        $query = Blogs::orderBy('created_at', 'DESC')
+            ->with('category', 'creator', 'tags', 'allowedUsers')
+            ->withCount(['comments', 'reactions', 'reactionsUp', 'reactionsDown']);
+
+        if ($request->title) {
+            $query->where(function ($q) use ($request) {
+                $q->where('title', 'like', '%' . $request->title . '%')
+                    ->orWhere('subtitle', 'like', '%' . $request->title . '%');
+            });
+        }
+
+        if ($request->category) {
+            $query->where('category_id', $request->category);
+        }
+
+        if ($request->createdAt) {
+            $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+            $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+
+        if ($limit) {
+            $query->take($limit);
+        }
+
+        $blogs = $query->get();
+
+        $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
+        foreach ($blogs as $b) {
+            $b->setAttribute('canDeleteComments', $canDelete);
+        }
+
+        return response()->json($blogs, 200);
+    }
+
     function getOne($id)
     {
         $cacheKey = $this->getCacheKey('blogs', 'item', $id);
@@ -107,13 +157,27 @@ class BlogsController extends Controller
 
         $blog = $this->cacheRemember($cacheKey, 'blogs', $ttl, function () use ($id) {
             return Blogs::where('id', $id)
-                ->with('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user', 'tags')
+                ->with('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user', 'tags', 'allowedUsers.user')
                 ->withCount(['comments'])
                 ->first();
         });
 
         if (!$blog) {
             return response()->json(['message' => 'Not found'], 404);
+        }
+
+        $user = Auth::user();
+
+        // Privacy check for private blogs
+        if ($blog->privacy === 'private') {
+            if (!$user) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
+            $isAllowed = $blog->allowedUsers()->where('user_id', $user->id)->exists();
+            $isCreator = $blog->created_by === $user->id;
+            if (!$isAllowed && !$isCreator) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
         }
 
         if ($blog) {
@@ -139,12 +203,17 @@ class BlogsController extends Controller
             $blog->picture = isset($request->picture) ? $this->saveFile($request->picture) : null;
             $blog->privacy = $request->private ? 'private' : 'public';
             $blog->created_by = $user->id;
-            $blog->banner = $request->banner;
             $blog->category_id = $request->category;
-            $blog->expiration = $request->expiration;
-            $blog->start_date = $request->startDate;
-            $blog->end_date = $request->endDate;
             $blog->save();
+
+            if ($request->private && is_array($request->users)) {
+                foreach ($request->users as $userId) {
+                    $blogUser = new BlogUsers();
+                    $blogUser->blog_id = $blog->id;
+                    $blogUser->user_id = $userId;
+                    $blogUser->save();
+                }
+            }
 
             if ($tags && count($tags) > 0) {
                 foreach ($tags as $key => $tag) {
@@ -182,12 +251,18 @@ class BlogsController extends Controller
             $blog->picture = isset($request->picture) ? $this->saveFile($request->picture) : $blog->picture;
             $blog->privacy = $request->private ? 'private' : 'public';
             $blog->created_by = $user->id;
-            $blog->banner = $request->banner;
             $blog->category_id = $request->category;
-            $blog->expiration = $request->expiration;
-            $blog->start_date = $request->startDate;
-            $blog->end_date = $request->endDate;
             $blog->save();
+
+            if ($request->private && is_array($request->users)) {
+                BlogUsers::where('blog_id', $id)->delete();
+                foreach ($request->users as $userId) {
+                    $blogUser = new BlogUsers();
+                    $blogUser->blog_id = $blog->id;
+                    $blogUser->user_id = $userId;
+                    $blogUser->save();
+                }
+            }
 
             if ($tags && count($tags) > 0) {
 

@@ -103,6 +103,46 @@ class ArticlesController extends Controller
     return response()->json($articles, 200);
   }
 
+  function getAllForDashboard(Request $request)
+  {
+    $user = Auth::user();
+    $limit = $request->limit;
+
+    $query = Articles::orderBy('created_at', 'DESC')
+      ->with('category', 'creator', 'users', 'users.user')
+      ->withCount(['comments']);
+
+    if ($request->name) {
+      $query->where(function ($query) use ($request) {
+        $query->where('title', 'like', '%' . $request->name . '%')
+          ->orWhere('short_text', 'like', '%' . $request->name . '%');
+      });
+    }
+
+    if ($request->articleCategoryId) {
+      $query->where('article_category_id', $request->articleCategoryId);
+    }
+
+    if ($request->createdAt) {
+      $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+      $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+      $query->whereBetween('created_at', [$startDate, $endDate]);
+    }
+
+    if ($limit) {
+      $query->take($limit);
+    }
+
+    $articles = $query->get();
+
+    $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
+    foreach ($articles as $a) {
+      $a->setAttribute('canDeleteComments', $canDelete);
+    }
+
+    return response()->json($articles, 200);
+  }
+
   function create(Request $request)
   {
 

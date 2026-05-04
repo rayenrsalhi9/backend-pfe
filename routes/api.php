@@ -172,9 +172,17 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         Route::get('/dashboard/yearly-reminder/{month}/{year}', [DashboardController::class, 'getYearlyReminders']);
         Route::get('/dashboard/one-time-reminder/{month}/{year}', [DashboardController::class, 'getOneTimeReminder']);
         Route::get('/dashboard/get-document-by-category', [DocumentController::class, 'getDocumentsByCategoryQuery']);
-        Route::get('/documents/transactions', [DocumentAuditTrailController::class, 'documentsTransactions']);
-        Route::get('/documents/extension', [DocumentController::class, 'countByExtension']);
+        Route::get('/dashboard/transactions', [DocumentAuditTrailController::class, 'documentsTransactions']);
+        Route::get('/dashboard/extension', [DocumentController::class, 'countByExtension']);
         Route::get('/user', [UserController::class, 'index']);
+
+        // Dashboard content endpoints - full access for authorized users
+        Route::get('/dashboard/blogs', [BlogsController::class, 'getAllForDashboard'])
+            ->middleware('hasToken:BLOG_VIEW_BLOGS');
+        Route::get('/dashboard/forums', [ForumsController::class, 'getAllForDashboard'])
+            ->middleware('hasToken:FORUM_VIEW_FORUMS');
+        Route::get('/dashboard/articles', [ArticlesController::class, 'getAllForDashboard'])
+            ->middleware('hasToken:ARTICLE_VIEW_ARTICLES');
     });
 
     Route::get('/category/dropdown', [CategoryController::class, 'getAllCategoriesForDropDown']);
@@ -319,6 +327,12 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
     Route::middleware('hasToken:REMINDER_VIEW_REMINDERS')->group(function () {
         Route::get('/reminder/all', [ReminderController::class, 'getReminders']);
     });
+
+    // Document endpoints for dashboard
+    Route::get('/document/extension', [DocumentController::class, 'countByExtension'])
+        ->middleware('hasToken:DASHBOARD_VIEW_DASHBOARD');
+    Route::get('/document/transactions', [DocumentAuditTrailController::class, 'documentsTransactions'])
+        ->middleware('hasToken:DASHBOARD_VIEW_DASHBOARD');
 
     Route::middleware('hasToken:REMINDER_CREATE_REMINDER')->group(function () {
         Route::post('/reminder', [ReminderController::class, 'addReminder']);

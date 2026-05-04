@@ -72,4 +72,9 @@ class Forums extends Model
     {
         return $this->hasMany(Tags::class, 'forum_id', 'id')->orderBy('created_at', 'asc');
     }
+
+    public function allowedUsers()
+    {
+        return $this->hasMany(ForumUsers::class, 'forum_id', 'id');
+    }
 }

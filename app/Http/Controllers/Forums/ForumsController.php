@@ -9,6 +9,7 @@ use App\Models\ForumComments;
 use App\Models\ForumReactions;
 use App\Models\Forums;
 use App\Models\Tags;
+use App\Models\ForumUsers;
 use App\Models\ResponseAuditTrails;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -28,13 +29,28 @@ class ForumsController extends Controller
         $forums = $this->cacheRemember($cacheKey, 'forums', $ttl, function () use ($request) {
             $limit = $request->limit;
             $banner = $request->banner;
+            $user = Auth::user();
 
             $query = Forums::orderBy('created_at', 'DESC')
                 ->with(['creator' => function ($q) {
                     $q->select('users.id', 'users.firstName', 'users.lastName', 'users.userName', 'users.avatar', 'users.isDeleted')->withoutGlobalScope('isDeleted');
                 }])
-                ->with('category')
+                ->with('category', 'allowedUsers')
                 ->withCount(['reactions', 'comments'])
+                ->where(function ($query) use ($user) {
+                    $query->where('privacy', 'public');
+                    if ($user) {
+                        $query->orWhere(function ($query) use ($user) {
+                            $query->where('privacy', 'private')
+                                ->where(function ($query) use ($user) {
+                                    $query->whereHas('allowedUsers', function ($query) use ($user) {
+                                        $query->where('user_id', $user->id);
+                                    });
+                                    $query->orWhere('created_by', $user->id);
+                                });
+                        });
+                    }
+                })
                 ->when($limit, function ($query) use ($limit) {
                     return $query->take($limit);
                 });
@@ -80,6 +96,60 @@ class ForumsController extends Controller
         return response()->json($forums, 200);
     }
 
+    function getAllForDashboard(Request $request)
+    {
+        $user = Auth::user();
+        $limit = $request->limit;
+
+        $query = Forums::orderBy('created_at', 'DESC')
+            ->with(['creator' => function ($q) {
+                $q->select('users.id', 'users.firstName', 'users.lastName', 'users.userName', 'users.avatar', 'users.isDeleted')->withoutGlobalScope('isDeleted');
+            }])
+            ->with('category', 'allowedUsers')
+            ->withCount(['reactions', 'comments']);
+
+        if ($request->has('banner')) {
+            $parsedBanner = filter_var($request->banner, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($parsedBanner !== null) {
+                $query->where('banner', $parsedBanner);
+            }
+        }
+
+        if ($request->has('closed')) {
+            $bool = filter_var($request->closed, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($bool !== null) {
+                $query->where('closed', $bool);
+            }
+        }
+
+        if ($request->title) {
+            $query->where('title', 'like', '%' . $request->title . '%');
+        }
+
+        if ($request->category) {
+            $query->where('category_id', $request->category);
+        }
+
+        if ($request->createdAt) {
+            $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+            $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+
+        if ($limit) {
+            $query->take($limit);
+        }
+
+        $forums = $query->get();
+
+        $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
+        foreach ($forums as $f) {
+            $f->setAttribute('canDeleteComments', $canDelete);
+        }
+
+        return response()->json($forums, 200);
+    }
+
     function getOne($id)
     {
         $forum = Forums::where('id', $id)
@@ -93,13 +163,28 @@ class ForumsController extends Controller
                 'reactions.user',
                 'comments',
                 'comments.user',
-                'tags'
+                'tags',
+                'allowedUsers.user'
             )
             ->withCount(['reactions', 'comments'])
             ->first();
 
         if (!$forum) {
             return response()->json(['message' => 'Not found'], 404);
+        }
+
+        $user = Auth::user();
+
+        // Privacy check for private forums
+        if ($forum->privacy === 'private') {
+            if (!$user) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
+            $isAllowed = $forum->allowedUsers()->where('user_id', $user->id)->exists();
+            $isCreator = $forum->created_by === $user->id;
+            if (!$isAllowed && !$isCreator) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
         }
 
         $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
@@ -123,6 +208,15 @@ class ForumsController extends Controller
             $forum->category_id = $request->category;
             $forum->closed = false;
             $forum->save();
+
+            if ($request->private && is_array($request->users)) {
+                foreach ($request->users as $userId) {
+                    $forumUser = new ForumUsers();
+                    $forumUser->forum_id = $forum->id;
+                    $forumUser->user_id = $userId;
+                    $forumUser->save();
+                }
+            }
 
             if (!empty($tags)) {
                 foreach ($tags as $tag) {
@@ -164,6 +258,16 @@ class ForumsController extends Controller
             $forum->category_id = $request->category;
             $forum->closed = $request->closed;
             $forum->save();
+
+            if ($request->private && is_array($request->users)) {
+                ForumUsers::where('forum_id', $forum->id)->delete();
+                foreach ($request->users as $userId) {
+                    $forumUser = new ForumUsers();
+                    $forumUser->forum_id = $forum->id;
+                    $forumUser->user_id = $userId;
+                    $forumUser->save();
+                }
+            }
 
             if ($tags !== null) {
                 Tags::where('forum_id', $forum->id)->delete();

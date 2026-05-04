@@ -155,20 +155,34 @@ class UserController extends Controller
 
    
     public function getAllPublic(Request $request)
-    
     {
-      
+        $user = Auth::user();
         $limit = $request->limit;
         $query = Articles::orderBy('created_at', 'DESC')
             ->with('category', 'creator')
-            ->where('privacy', 'public') // Seulement les articles publics
+            ->where(function ($query) use ($user) {
+                $query->where('privacy', 'public');
+                if ($user) {
+                    $query->orWhere(function ($query) use ($user) {
+                        $query->where('privacy', 'private')
+                            ->where(function ($query) use ($user) {
+                                $query->whereHas('users', function ($query) use ($user) {
+                                    $query->where('user_id', $user->id);
+                                });
+                                $query->orWhere('created_by', $user->id);
+                            });
+                    });
+                }
+            })
             ->when($limit, function ($query) use ($limit) {
                 return $query->take($limit);
             });
 
         if ($request->name) {
-            $query->where('title', 'like', '%' . $request->name . '%')
-                  ->orWhere('short_text', 'like', '%' . $request->name . '%');
+            $query->where(function ($query) use ($request) {
+                $query->where('title', 'like', '%' . $request->name . '%')
+                      ->orWhere('short_text', 'like', '%' . $request->name . '%');
+            });
         }
 
         if ($request->articleCategoryId) {
