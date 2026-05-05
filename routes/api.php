@@ -80,12 +80,12 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
         $cleanChannelName = preg_replace('/^(private-|presence-)/', '', $channelName);
 
-        if (preg_match('/^App\.Models\.User\.(\d+)$/', $cleanChannelName, $matches)) {
-            $channelUserId = (int) $matches[1];
-            if ((int) $user->id !== $channelUserId) {
+        if (preg_match('/^App\.Models\.User\.([a-zA-Z0-9-]+)$/', $cleanChannelName, $matches)) {
+            $channelUserId = $matches[1];
+            if ($user->id !== $channelUserId) {
                 return response()->json(['error' => 'Forbidden'], 403);
             }
-        } elseif (preg_match('/^conversation\.(\d+)$/', $cleanChannelName, $matches)) {
+        } elseif (preg_match('/^conversation\.([a-zA-Z0-9-]+)$/', $cleanChannelName, $matches)) {
             $conversationId = $matches[1];
             $conversation = \App\Models\Conversation::find($conversationId);
             if (!$conversation || !$conversation->users()->where('user_id', $user->id)->exists()) {
