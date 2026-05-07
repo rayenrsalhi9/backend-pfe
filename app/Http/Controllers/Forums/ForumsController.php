@@ -23,7 +23,8 @@ class ForumsController extends Controller
 
     function getAll(Request $request)
     {
-        $cacheKey = $this->getCacheKey('forums', 'list', md5(json_encode($request->all())));
+        $viewer = Auth::id() ?? 'guest';
+        $cacheKey = $this->getCacheKey('forums', 'list', md5(json_encode($request->all())), $viewer);
         $ttl = $this->getCacheTtl('forums');
 
         $forums = $this->cacheRemember($cacheKey, 'forums', $ttl, function () use ($request) {
@@ -210,7 +211,11 @@ class ForumsController extends Controller
             $forum->save();
 
             if ($request->private && is_array($request->users)) {
-                foreach ($request->users as $userId) {
+                $users = $request->users;
+                if (!in_array($user->id, $users)) {
+                    $users[] = $user->id;
+                }
+                foreach ($users as $userId) {
                     $forumUser = new ForumUsers();
                     $forumUser->forum_id = $forum->id;
                     $forumUser->user_id = $userId;
@@ -231,7 +236,7 @@ class ForumsController extends Controller
                 }
             }
 
-            $response = $forum->load('category', 'creator', 'tags');
+            $response = $forum->load('category', 'creator', 'tags', 'allowedUsers');
 
             $this->flushCacheTag('forums');
 
@@ -261,12 +266,18 @@ class ForumsController extends Controller
 
             if ($request->private && is_array($request->users)) {
                 ForumUsers::where('forum_id', $forum->id)->delete();
-                foreach ($request->users as $userId) {
+                $users = $request->users;
+                if (!in_array($user->id, $users)) {
+                    $users[] = $user->id;
+                }
+                foreach ($users as $userId) {
                     $forumUser = new ForumUsers();
                     $forumUser->forum_id = $forum->id;
                     $forumUser->user_id = $userId;
                     $forumUser->save();
                 }
+            } else if ($request->private === false || $request->private === 'false' || !$request->private) {
+                ForumUsers::where('forum_id', $forum->id)->delete();
             }
 
             if ($tags !== null) {
@@ -286,7 +297,7 @@ class ForumsController extends Controller
                 }
             }
 
-            $response = $forum->load('category', 'creator', 'tags');
+            $response = $forum->load('category', 'creator', 'tags', 'allowedUsers');
 
             $this->flushCacheTag('forums');
 

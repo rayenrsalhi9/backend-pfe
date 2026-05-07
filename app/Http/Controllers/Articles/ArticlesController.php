@@ -154,17 +154,21 @@ class ArticlesController extends Controller
       $article->title = $request->title;
       $article->short_text = $request->description;
       $article->long_text = $request->body;
-      $article->picture = isset($request->picture) ? $this->saveFile($request->picture) : null;
+      $article->picture = isset($request->picture) ? $this->saveFile($request->picture) : '';
       $article->privacy = $request->private ? 'private' : 'public';
       $article->created_by = $user->id;
       $article->article_category_id = $request->category;
       $article->save();
 
       if ($request->private) {
-        foreach ($request->users as $key => $user) {
+        $users = is_array($request->users) ? $request->users : [];
+        if (!in_array($user->id, $users)) {
+            $users[] = $user->id;
+        }
+        foreach ($users as $key => $userId) {
           $articleUser = new ArticleUsers();
           $articleUser->article_id = $article->id;
-          $articleUser->user_id = $user;
+          $articleUser->user_id = $userId;
           $articleUser->save();
         }
       }
@@ -227,15 +231,19 @@ class ArticlesController extends Controller
       $article->save();
 
       if ($request->private) {
-
         ArticleUsers::where('article_id', $id)->delete();
-
-        foreach ($request->users as $key => $user) {
+        $users = is_array($request->users) ? $request->users : [];
+        if (!in_array($user->id, $users)) {
+            $users[] = $user->id;
+        }
+        foreach ($users as $key => $userId) {
           $articleUser = new ArticleUsers();
           $articleUser->article_id = $article->id;
-          $articleUser->user_id = $user;
+          $articleUser->user_id = $userId;
           $articleUser->save();
         }
+      } else if ($request->private === false || $request->private === 'false' || !$request->private) {
+        ArticleUsers::where('article_id', $id)->delete();
       }
 
       $response = $article->load('category', 'users', 'users.user', 'creator');
@@ -251,6 +259,8 @@ class ArticlesController extends Controller
   function delete($id)
   {
     $category = Articles::where('id', $id)->first();
+    if (!$category) return response()->json(['message' => 'Not found'], 404);
+    $this->authorize('delete', $category);
     $category->delete();
 
     $this->flushCacheTag('articles');

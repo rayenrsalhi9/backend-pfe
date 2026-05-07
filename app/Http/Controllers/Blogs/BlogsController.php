@@ -47,7 +47,8 @@ class BlogsController extends Controller
 
     function getAll(Request $request)
     {
-        $cacheKey = $this->getCacheKey('blogs', 'list', md5(json_encode($request->all())));
+        $viewer = Auth::id() ?? 'guest';
+        $cacheKey = $this->getCacheKey('blogs', 'list', md5(json_encode($request->all())), $viewer);
         $ttl = $this->getCacheTtl('blogs');
 
         $blog = $this->cacheRemember($cacheKey, 'blogs', $ttl, function () use ($request) {
@@ -200,14 +201,18 @@ class BlogsController extends Controller
             $blog->title = $request->title;
             $blog->subtitle = $request->subtitle;
             $blog->body = $request->body;
-            $blog->picture = isset($request->picture) ? $this->saveFile($request->picture) : null;
+            $blog->picture = isset($request->picture) ? $this->saveFile($request->picture) : '';
             $blog->privacy = $request->private ? 'private' : 'public';
             $blog->created_by = $user->id;
             $blog->category_id = $request->category;
             $blog->save();
 
             if ($request->private && is_array($request->users)) {
-                foreach ($request->users as $userId) {
+                $users = $request->users;
+                if (!in_array($user->id, $users)) {
+                    $users[] = $user->id;
+                }
+                foreach ($users as $userId) {
                     $blogUser = new BlogUsers();
                     $blogUser->blog_id = $blog->id;
                     $blogUser->user_id = $userId;
@@ -225,7 +230,7 @@ class BlogsController extends Controller
                 }
             }
 
-            $response = $blog->load('category', 'creator', 'tags');
+            $response = $blog->load('category', 'creator', 'tags', 'allowedUsers');
 
             $this->flushCacheTag('blogs');
 
@@ -256,12 +261,18 @@ class BlogsController extends Controller
 
             if ($request->private && is_array($request->users)) {
                 BlogUsers::where('blog_id', $id)->delete();
-                foreach ($request->users as $userId) {
+                $users = $request->users;
+                if (!in_array($user->id, $users)) {
+                    $users[] = $user->id;
+                }
+                foreach ($users as $userId) {
                     $blogUser = new BlogUsers();
                     $blogUser->blog_id = $blog->id;
                     $blogUser->user_id = $userId;
                     $blogUser->save();
                 }
+            } else if ($request->private === false || $request->private === 'false' || !$request->private) {
+                BlogUsers::where('blog_id', $id)->delete();
             }
 
             if ($tags && count($tags) > 0) {
@@ -277,7 +288,7 @@ class BlogsController extends Controller
                 }
             }
 
-            $response = $blog->load('category', 'creator', 'tags');
+            $response = $blog->load('category', 'creator', 'tags', 'allowedUsers');
 
             $this->flushCacheTag('blogs');
 
@@ -290,6 +301,8 @@ class BlogsController extends Controller
     function delete($id)
     {
         $category = Blogs::where('id', $id)->first();
+        if (!$category) return response()->json(['message' => 'Not found'], 404);
+        $this->authorize('delete', $category);
         $category->delete();
 
         $this->flushCacheTag('blogs');
