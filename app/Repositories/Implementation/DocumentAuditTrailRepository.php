@@ -37,12 +37,16 @@ class DocumentAuditTrailRepository extends BaseRepository implements DocumentAud
     public function getDocumentAuditTrails($attributes)
     {
 
-        $query = DocumentAuditTrails::select(['documentAuditTrails.*', 'documents.name as documentName', 'categories.name as categoryName', 'roles.name as permissionRole', DB::raw("CONCAT(userRole.firstName,' ', userRole.lastName) as permissionUser"), 'userRole.email as permissionUserEmail', DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdBy"), 'users.email as createdByEmail'])
+        $query = DocumentAuditTrails::select([
+                'documentAuditTrails.*',
+                'documents.name as documentName',
+                'categories.name as categoryName',
+                DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdBy"),
+                'users.email as createdByEmail'
+            ])
             ->join('documents', 'documentAuditTrails.documentId', '=', 'documents.id')
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
-            ->join('users', 'documentAuditTrails.createdBy', '=', 'users.id')
-            ->leftJoin('roles', 'documentAuditTrails.assignToRoleId', '=', 'roles.id')
-            ->leftJoin('users as userRole', 'documentAuditTrails.assignToUserId', '=', 'userRole.id');
+            ->join('users', 'documentAuditTrails.createdBy', '=', 'users.id');
 
         $orderByArray =  explode(' ', $attributes->orderBy);
         $orderBy = $orderByArray[0];
@@ -58,10 +62,6 @@ class DocumentAuditTrailRepository extends BaseRepository implements DocumentAud
             $query = $query->orderBy('users.firstName', $direction);
         } else if ($orderBy == 'operationName') {
             $query = $query->orderBy('documentAuditTrails.operationName', $direction);
-        } else if ($orderBy == 'permissionRole') {
-            $query = $query->orderBy('roles.name', $direction);
-        } else if ($orderBy == 'permissionUser') {
-            $query = $query->orderBy('userRole.firstName', $direction);
         }
 
         if ($attributes->categoryId) {

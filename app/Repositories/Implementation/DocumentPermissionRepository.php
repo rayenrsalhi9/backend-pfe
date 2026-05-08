@@ -64,6 +64,8 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
 
             $documentRolePermissions = $request['documentRolePermissions'];
             $rolePermissionsArray = array();
+            $assignedRoleIds = array();
+
             foreach ($documentRolePermissions as $docuemntrole) {
                 if ($docuemntrole['isTimeBound']) {
                     $startdate1 = date('Y-m-d', strtotime(str_replace('/', '-', $docuemntrole['startDate'])));
@@ -81,12 +83,7 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
                     'startDate' => $this->startDate ?? ''
                 ]);
 
-                DocumentAuditTrails::create([
-                    'documentId' => $docuemntrole['documentId'],
-                    'createdDate' =>  Carbon::now(),
-                    'operationName' => DocumentOperationEnum::Add_Permission->value,
-                    'assignToRoleId' => $docuemntrole['roleId']
-                ]);
+                $assignedRoleIds[] = $docuemntrole['roleId'];
 
                 $userIds = UserRoles::select('userId')
                     ->where('roleId', $docuemntrole['roleId'])
@@ -100,11 +97,21 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
                 }
             }
 
+            if (!empty($assignedRoleIds)) {
+                DocumentAuditTrails::create([
+                    'documentId' => $documentRolePermissions[0]['documentId'],
+                    'createdDate' =>  Carbon::now(),
+                    'operationName' => DocumentOperationEnum::Add_Permission->value,
+                    'assignToRoleId' => implode(',', $assignedRoleIds)
+                ]);
+            }
+
             $rolePermissions = array_unique($rolePermissionsArray, SORT_REGULAR);
             foreach ($rolePermissions as $rolePermission) {
                 UserNotifications::create([
                     'documentId' => $rolePermission['documentId'],
-                    'userId' => $rolePermission['userId']
+                    'userId' => $rolePermission['userId'],
+                    'type' => 'document'
                 ]);
             }
 
@@ -126,6 +133,8 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
             DB::beginTransaction();
 
             $documentUserPermissions = $request['documentUserPermissions'];
+            $assignedUserIds = array();
+
             foreach ($documentUserPermissions as $docuemntUser) {
                 if ($docuemntUser['isTimeBound']) {
                     $startdate1 = date('Y-m-d', strtotime(str_replace('/', '-', $docuemntUser['startDate'])));
@@ -143,18 +152,24 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
                     'startDate' => $this->startDate ?? ''
                 ]);
 
-                DocumentAuditTrails::create([
-                    'documentId' => $docuemntUser['documentId'],
-                    'createdDate' =>  Carbon::now(),
-                    'operationName' => DocumentOperationEnum::Add_Permission->value,
-                    'assignToUserId' => $docuemntUser['userId']
-                ]);
+                $assignedUserIds[] = $docuemntUser['userId'];
 
                 UserNotifications::create([
                     'documentId' => $docuemntUser['documentId'],
-                    'userId' => $docuemntUser['userId']
+                    'userId' => $docuemntUser['userId'],
+                    'type' => 'document'
                 ]);
             }
+
+            if (!empty($assignedUserIds)) {
+                DocumentAuditTrails::create([
+                    'documentId' => $documentUserPermissions[0]['documentId'],
+                    'createdDate' =>  Carbon::now(),
+                    'operationName' => DocumentOperationEnum::Add_Permission->value,
+                    'assignToUserId' => implode(',', $assignedUserIds)
+                ]);
+            }
+
             DB::commit();
             $this->resetModel();
             $result = $this->parseResult($model);
@@ -295,7 +310,8 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
             foreach ($permissions as $permission) {
                 UserNotifications::create([
                     'documentId' => $permission['documentId'],
-                    'userId' => $permission['userId']
+                    'userId' => $permission['userId'],
+                    'type' => 'document'
                 ]);
             }
             DB::commit();
