@@ -71,6 +71,42 @@ class SurverysController extends Controller
         return response()->json($surveys, 200);
     }
 
+    function getAllForDashboard(Request $request)
+    {
+        $user = Auth::user();
+        $limit = $request->limit;
+        $type = $request->type;
+        $privacy = $request->privacy;
+
+        $query = Surveys::orderBy('created_at', 'DESC')
+            ->with('creator', 'answers')
+            ->when($privacy, function ($query) use ($privacy) {
+                return $query->where('privacy', $privacy);
+            });
+
+        if ($request->title) {
+            $query->where('title', 'like', '%' . $request->title . '%');
+        }
+
+        if ($type) {
+            $query->where('type', $request->type);
+        }
+
+        if ($request->createdAt) {
+            $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+            $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+
+        if ($limit) {
+            $query->take($limit);
+        }
+
+        $surveys = $query->get();
+
+        return response()->json($surveys, 200);
+    }
+
     function getLast()
     {
         $viewer = Auth::id() ?? 'guest';
@@ -130,7 +166,10 @@ class SurverysController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        return response()->json($survey, 200);
+        $data = $survey->toArray();
+        $data['answersCount'] = (int) $survey->answers_count;
+
+        return response()->json($data, 200);
     }
 
     function statistics($id)
@@ -151,7 +190,7 @@ class SurverysController extends Controller
 
         try {
             $groupedSurveyAnswers = SurveyAnswers::where('survey_id', $id)->select([
-                DB::raw("MONTH(surveys.created_at) as month"),
+                DB::raw("MONTH(survey_answers.created_at) as month"),
                 'surveys.type',
                 'survey_answers.answer',
                 DB::raw('COUNT(survey_answers.id) as count')

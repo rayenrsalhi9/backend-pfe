@@ -183,6 +183,8 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
             ->middleware('hasToken:FORUM_VIEW_FORUMS');
         Route::get('/dashboard/articles', [ArticlesController::class, 'getAllForDashboard'])
             ->middleware('hasToken:ARTICLE_VIEW_ARTICLES');
+        Route::get('/dashboard/surveys', [SurverysController::class, 'getAllForDashboard'])
+            ->middleware('hasToken:SURVEY_VIEW_SURVEYS');
     });
 
     Route::get('/category/dropdown', [CategoryController::class, 'getAllCategoriesForDropDown']);
