@@ -128,16 +128,16 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
             ->join('users', 'documents.createdBy', '=', 'users.id');
 
-        if ($attributes->categoryId) {
+        if (property_exists($attributes, 'categoryId') && $attributes->categoryId) {
             $query = $query->where('categoryId', $attributes->categoryId);
         }
 
-        if ($attributes->name) {
+        if (property_exists($attributes, 'name') && $attributes->name) {
             $query = $query->where('documents.name', 'like', '%' . $attributes->name . '%')
                 ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
         }
 
-        if ($attributes->metaTags) {
+        if (property_exists($attributes, 'metaTags') && $attributes->metaTags) {
             $metaTags = $attributes->metaTags;
             $query = $query->whereExists(function ($query) use ($metaTags) {
                 $query->select(DB::raw(1))
@@ -147,7 +147,7 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             });
         }
 
-        if ($attributes->createDateString) {
+        if (property_exists($attributes, 'createDateString') && $attributes->createDateString) {
             $date = date('Y-m-d', strtotime(str_replace('/', '-', $attributes->createDateString)));
 
             $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
