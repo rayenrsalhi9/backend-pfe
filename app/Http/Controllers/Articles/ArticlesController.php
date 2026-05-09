@@ -46,7 +46,7 @@ class ArticlesController extends Controller
   {
 
     $viewer = Auth::id() ?? 'guest';
-    $cacheKey = $this->getCacheKey('articles', 'list', md5(json_encode($request->all())), $viewer);
+    $cacheKey = $this->getCacheKey('articles', 'list', $this->normalizeRequestParams($request->all()), $viewer);
     $ttl = $this->getCacheTtl('articles');
 
     $articles = $this->cacheRemember($cacheKey, 'articles', $ttl, function () use ($request) {
@@ -105,7 +105,6 @@ class ArticlesController extends Controller
 
   function getAllForDashboard(Request $request)
   {
-    $user = Auth::user();
     $limit = $request->limit;
 
     $query = Articles::orderBy('created_at', 'DESC')
@@ -150,17 +149,18 @@ class ArticlesController extends Controller
 
     try {
 
+      $isPrivate = $request->boolean('private');
       $article = new Articles();
       $article->title = $request->title;
       $article->short_text = $request->description;
       $article->long_text = $request->body;
       $article->picture = isset($request->picture) ? $this->saveFile($request->picture) : '';
-      $article->privacy = $request->private ? 'private' : 'public';
+      $article->privacy = $isPrivate ? 'private' : 'public';
       $article->created_by = $user->id;
       $article->article_category_id = $request->category;
       $article->save();
 
-      if ($request->private) {
+      if ($isPrivate) {
         $users = is_array($request->users) ? $request->users : [];
         if (!in_array($user->id, $users)) {
             $users[] = $user->id;
@@ -220,18 +220,20 @@ class ArticlesController extends Controller
 
     try {
 
+      $isPrivate = $request->boolean('private');
       $article = Articles::where('id', $id)->first();
       $article->title = $request->title;
       $article->short_text = $request->description;
       $article->long_text = $request->body;
-      $article->privacy = $request->private ? 'private' : 'public';
+      $article->privacy = $isPrivate ? 'private' : 'public';
       $article->picture = isset($request->picture) ? $this->saveFile($request->picture) : $article->picture;
       $article->created_by = $user->id;
       $article->article_category_id = $request->category;
       $article->save();
 
-      if ($request->private) {
-        ArticleUsers::where('article_id', $id)->delete();
+      ArticleUsers::where('article_id', $id)->delete();
+
+      if ($isPrivate) {
         $users = is_array($request->users) ? $request->users : [];
         if (!in_array($user->id, $users)) {
             $users[] = $user->id;
@@ -242,8 +244,6 @@ class ArticlesController extends Controller
           $articleUser->user_id = $userId;
           $articleUser->save();
         }
-      } else if ($request->private === false || $request->private === 'false' || !$request->private) {
-        ArticleUsers::where('article_id', $id)->delete();
       }
 
       $response = $article->load('category', 'users', 'users.user', 'creator');

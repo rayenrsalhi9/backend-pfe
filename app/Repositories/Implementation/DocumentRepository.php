@@ -50,22 +50,9 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             ->where('userId', $userId)
             ->get();
         $roleIds = $userRoles->pluck('roleId')->toArray();
-        $roleIdList = !empty($roleIds) ? implode(',', array_map(function ($id) {
-            return "'$id'";
-        }, $roleIds)) : "'none'";
 
-        $selectColumns = ['documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName', DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName"),
-            DB::raw("(CASE WHEN EXISTS (
-                SELECT 1 FROM documentUserPermissions
-                WHERE documentUserPermissions.documentId = documents.id
-                AND documentUserPermissions.userId = '$userId'
-                AND documentUserPermissions.isAllowDownload = 1
-            ) OR EXISTS (
-                SELECT 1 FROM documentRolePermissions
-                WHERE documentRolePermissions.documentId = documents.id
-                AND documentRolePermissions.isAllowDownload = 1
-                AND documentRolePermissions.roleId IN ($roleIdList)
-            ) THEN 1 ELSE 0 END) as isAllowDownload")
+        $selectColumns = ['documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName',
+            DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName")
         ];
     
         if ($includeCreatorEmail) {
@@ -75,6 +62,29 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         $query = Documents::select($selectColumns)
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
             ->join('users', 'documents.createdBy', '=', 'users.id');
+
+        $isAllowDownloadSql = "(CASE WHEN EXISTS (
+            SELECT 1 FROM documentUserPermissions
+            WHERE documentUserPermissions.documentId = documents.id
+            AND documentUserPermissions.userId = ?
+            AND documentUserPermissions.isAllowDownload = 1
+        ) OR EXISTS (
+            SELECT 1 FROM documentRolePermissions
+            WHERE documentRolePermissions.documentId = documents.id
+            AND documentRolePermissions.isAllowDownload = 1
+            AND documentRolePermissions.roleId IN (";
+
+        if (!empty($roleIds)) {
+            $isAllowDownloadSql .= rtrim(str_repeat('?,', count($roleIds)), ',');
+            $bindings = array_merge([$userId], $roleIds);
+        } else {
+            $isAllowDownloadSql .= '?';
+            $bindings = [$userId, 'none'];
+        }
+
+        $isAllowDownloadSql .= ")) THEN 1 ELSE 0 END) as isAllowDownload";
+
+        $query->selectRaw($isAllowDownloadSql, $bindings);
 
         $orderByArray = explode(' ', $attributes->orderBy);
         $orderBy = $orderByArray[0];
@@ -95,8 +105,10 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         }
 
         if (property_exists($attributes, 'name') && $attributes->name) {
-            $query = $query->where('documents.name', 'like', '%' . $attributes->name . '%')
-                ->orWhere('documents.description', 'like', '%' . $attributes->name . '%');
+            $query = $query->where(function ($q) use ($attributes) {
+                $q->where('documents.name', 'like', '%' . $attributes->name . '%')
+                  ->orWhere('documents.description', 'like', '%' . $attributes->name . '%');
+            });
         }
 
         if (property_exists($attributes, 'metaTags') && $attributes->metaTags) {
@@ -259,23 +271,13 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
                 }
             }
 
-            if (!empty($assignedRoleIds)) {
-                DocumentAuditTrails::create([
-                    'documentId' => $result->id,
-                    'createdDate' =>  Carbon::now(),
-                    'operationName' => DocumentOperationEnum::Add_Permission->value,
-                    'assignToRoleId' => implode(',', $assignedRoleIds)
-                ]);
-            }
-
-            if (!empty($assignedUserIds)) {
-                DocumentAuditTrails::create([
-                    'documentId' => $result->id,
-                    'createdDate' =>  Carbon::now(),
-                    'operationName' => DocumentOperationEnum::Add_Permission->value,
-                    'assignToUserId' => implode(',', $assignedUserIds)
-                ]);
-            }
+            DocumentAuditTrails::create([
+                'documentId' => $result->id,
+                'createdDate' =>  Carbon::now(),
+                'operationName' => DocumentOperationEnum::Add_Permission->value,
+                'assignToRoleId' => !empty($assignedRoleIds) ? implode(',', $assignedRoleIds) : null,
+                'assignToUserId' => !empty($assignedUserIds) ? implode(',', $assignedUserIds) : null
+            ]);
 
 
             $rolePermissions = array_unique($rolePermissionsArray, SORT_REGULAR);
@@ -289,9 +291,9 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
 
             $userId = Auth::parseToken()->getPayload()->get('userId');
 
-            $array = array_filter($documentUserPermissions, function ($item) use ($userId) {
+            $array = is_array($documentUserPermissions) ? array_filter($documentUserPermissions, function ($item) use ($userId) {
                 return $item->userId == $userId;
-            });
+            }) : [];
 
             if (count($array) == 0) {
                 DocumentUserPermissions::create(array(
@@ -424,7 +426,7 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
                 ]);
             }
 
-            UserNotifications::where('documentId', '=', $id)->delete();
+            UserNotifications::where('documentId', '=', $id)->where('type', 'document')->delete();
 
             $rolePermissions = array_unique($rolePermissionsArray, SORT_REGULAR);
             foreach ($rolePermissions as $rolePermission) {

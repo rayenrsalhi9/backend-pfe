@@ -36,21 +36,39 @@ return new class extends Migration
 
     public function down()
     {
-        $columns = DB::select("
-            SELECT COLUMN_NAME, COLUMN_TYPE
-            FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = 'documentAuditTrails'
-              AND COLUMN_NAME IN ('assignToUserId', 'assignToRoleId')
+        $badRows = DB::select("
+            SELECT id, assignToUserId, assignToRoleId
+            FROM documentAuditTrails
+            WHERE (LENGTH(assignToUserId) > 36 OR assignToUserId LIKE '%,%')
+               OR (LENGTH(assignToRoleId) > 36 OR assignToRoleId LIKE '%,%')
+            LIMIT 1
         ");
 
-        foreach ($columns as $col) {
-            DB::statement("ALTER TABLE `documentAuditTrails` MODIFY COLUMN `{$col->COLUMN_NAME}` CHAR(36) NULL");
+        if (!empty($badRows)) {
+            throw new RuntimeException(
+                'Cannot roll back: documentAuditTrails contains comma-separated or oversized UUID values ' .
+                'in assignToUserId/assignToRoleId (id=' . $badRows[0]->id . '). ' .
+                'Clean up the data before rolling back this migration.'
+            );
         }
 
-        Schema::table('documentAuditTrails', function ($table) {
-            $table->foreign('assignToUserId')->references('id')->on('users');
-            $table->foreign('assignToRoleId')->references('id')->on('roles');
+        DB::transaction(function () {
+            $columns = DB::select("
+                SELECT COLUMN_NAME, COLUMN_TYPE
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'documentAuditTrails'
+                  AND COLUMN_NAME IN ('assignToUserId', 'assignToRoleId')
+            ");
+
+            foreach ($columns as $col) {
+                DB::statement("ALTER TABLE `documentAuditTrails` MODIFY COLUMN `{$col->COLUMN_NAME}` CHAR(36) NULL");
+            }
+
+            Schema::table('documentAuditTrails', function ($table) {
+                $table->foreign('assignToUserId')->references('id')->on('users');
+                $table->foreign('assignToRoleId')->references('id')->on('roles');
+            });
         });
     }
 };

@@ -26,11 +26,11 @@ class ArticlesFactory extends Factory
 
     public function public(): static
     {
-        return new static(['privacy' => 'public']);
+        return $this->state(fn () => ['privacy' => 'public']);
     }
 
     public function private(): static
     {
-        return new static(['privacy' => 'private']);
+        return $this->state(fn () => ['privacy' => 'private']);
     }
 }

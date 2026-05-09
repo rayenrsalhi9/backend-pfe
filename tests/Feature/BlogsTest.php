@@ -100,8 +100,7 @@ class BlogsTest extends TestCase
                 'private' => false,
             ]);
 
-        // The controller uses try-catch, may return 500 on validation failure
-        // This documents the expected behavior
+        $response->assertStatus(200);
     }
 
     /* ===========================================
@@ -338,8 +337,7 @@ class BlogsTest extends TestCase
                 'category' => $category->id,
             ]);
 
-        // Note: The blogs/update route only uses 'auth' middleware, not 'hasToken'
-        // This documents the current behavior
+        $response->assertStatus(200);
     }
 
     public function test_getAll_returns_public_blogs_for_unauthenticated()

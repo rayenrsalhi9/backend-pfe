@@ -20,7 +20,7 @@ class SurverysController extends Controller
     function getAll(Request $request)
     {
         $viewer = Auth::id() ?? 'guest';
-        $cacheKey = $this->getCacheKey('surveys', 'list', md5(json_encode($request->all())), $viewer);
+        $cacheKey = $this->getCacheKey('surveys', 'list', $this->normalizeRequestParams($request->all()), $viewer);
         $ttl = $this->getCacheTtl('surveys');
 
         $surveys = $this->cacheRemember($cacheKey, 'surveys', $ttl, function () use ($request) {
@@ -73,7 +73,6 @@ class SurverysController extends Controller
 
     function getAllForDashboard(Request $request)
     {
-        $user = Auth::user();
         $limit = $request->limit;
         $type = $request->type;
         $privacy = $request->privacy;
@@ -190,7 +189,7 @@ class SurverysController extends Controller
 
         try {
             $groupedSurveyAnswers = SurveyAnswers::where('survey_id', $id)->select([
-                DB::raw("MONTH(survey_answers.created_at) as month"),
+                DB::raw("DATE_FORMAT(survey_answers.created_at, '%Y-%m') as month"),
                 'surveys.type',
                 'survey_answers.answer',
                 DB::raw('COUNT(survey_answers.id) as count')

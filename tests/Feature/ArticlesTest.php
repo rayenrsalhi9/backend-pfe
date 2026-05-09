@@ -273,7 +273,6 @@ class ArticlesTest extends TestCase
             'article_category_id' => $category->id,
         ]);
 
-        // Note: The articles/update route only uses 'auth' middleware
         $response = $this->actingAsUser($user, [])
             ->putJson("/api/articles/update/{$article->id}", [
                 'title' => 'Updated',
@@ -282,7 +281,7 @@ class ArticlesTest extends TestCase
                 'category' => $category->id,
             ]);
 
-        // Documents current behavior - no claim check at route level
+        $response->assertStatus(200);
     }
 
     public function test_getAll_returns_public_articles_for_unauthenticated()
@@ -339,13 +338,11 @@ class ArticlesTest extends TestCase
 
         ArticleUsers::create(['article_id' => $article->id, 'user_id' => $user->id]);
 
-        // NOTE: ArticleUsers model has a typo: 'arcticle_id' instead of 'article_id'
-        // This may cause relationship issues
         $article->refresh();
         $users = $article->users()->get();
 
-        // This test documents the bug - relationship may not work correctly
-        $this->assertNotNull($users);
+        $this->assertCount(1, $users);
+        $this->assertTrue($users->contains('user_id', $user->id));
     }
 
     public function test_delete_article_without_authorization()
@@ -378,9 +375,6 @@ class ArticlesTest extends TestCase
 
         ArticleUsers::create(['article_id' => $article->id, 'user_id' => $user->id]);
 
-        // Update without users array
-        // Current code: foreach ($request->users as $key => $user)
-        // This will fail if $request->users is not set
         $response = $this->actingAsUser($user, ['ARTICLE_EDIT_ARTICLE'])
             ->putJson("/api/articles/update/{$article->id}", [
                 'title' => 'Updated',
@@ -388,9 +382,9 @@ class ArticlesTest extends TestCase
                 'body' => 'Updated body content here.',
                 'category' => $category->id,
                 'private' => true,
-                // 'users' not provided
             ]);
 
-        // Documents current behavior - may cause error
+        $response->assertStatus(200);
+        $this->assertDatabaseHas('article_users', ['article_id' => $article->id, 'user_id' => $user->id]);
     }
 }

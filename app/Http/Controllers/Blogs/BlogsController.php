@@ -48,7 +48,7 @@ class BlogsController extends Controller
     function getAll(Request $request)
     {
         $viewer = Auth::id() ?? 'guest';
-        $cacheKey = $this->getCacheKey('blogs', 'list', md5(json_encode($request->all())), $viewer);
+        $cacheKey = $this->getCacheKey('blogs', 'list', $this->normalizeRequestParams($request->all()), $viewer);
         $ttl = $this->getCacheTtl('blogs');
 
         $blog = $this->cacheRemember($cacheKey, 'blogs', $ttl, function () use ($request) {
@@ -113,7 +113,6 @@ class BlogsController extends Controller
 
     function getAllForDashboard(Request $request)
     {
-        $user = Auth::user();
         $limit = $request->limit;
 
         $query = Blogs::orderBy('created_at', 'DESC')
@@ -202,12 +201,13 @@ class BlogsController extends Controller
             $blog->subtitle = $request->subtitle;
             $blog->body = $request->body;
             $blog->picture = isset($request->picture) ? $this->saveFile($request->picture) : '';
-            $blog->privacy = $request->private ? 'private' : 'public';
+            $isPrivate = $request->boolean('private');
+            $blog->privacy = $isPrivate ? 'private' : 'public';
             $blog->created_by = $user->id;
             $blog->category_id = $request->category;
             $blog->save();
 
-            if ($request->private && is_array($request->users)) {
+            if ($isPrivate && is_array($request->users)) {
                 $users = $request->users;
                 if (!in_array($user->id, $users)) {
                     $users[] = $user->id;
@@ -254,13 +254,15 @@ class BlogsController extends Controller
             $blog->subtitle = $request->subtitle;
             $blog->body = $request->body;
             $blog->picture = isset($request->picture) ? $this->saveFile($request->picture) : $blog->picture;
-            $blog->privacy = $request->private ? 'private' : 'public';
+            $isPrivate = $request->boolean('private');
+            $blog->privacy = $isPrivate ? 'private' : 'public';
             $blog->created_by = $user->id;
             $blog->category_id = $request->category;
             $blog->save();
 
-            if ($request->private && is_array($request->users)) {
-                BlogUsers::where('blog_id', $id)->delete();
+            BlogUsers::where('blog_id', $id)->delete();
+
+            if ($isPrivate && is_array($request->users)) {
                 $users = $request->users;
                 if (!in_array($user->id, $users)) {
                     $users[] = $user->id;
@@ -271,8 +273,6 @@ class BlogsController extends Controller
                     $blogUser->user_id = $userId;
                     $blogUser->save();
                 }
-            } else if ($request->private === false || $request->private === 'false' || !$request->private) {
-                BlogUsers::where('blog_id', $id)->delete();
             }
 
             if ($tags && count($tags) > 0) {
@@ -316,6 +316,17 @@ class BlogsController extends Controller
         $blog = Blogs::where('id', $id)->first();
         $user = Auth::user();
 
+        if ($blog->privacy === 'private') {
+            if (!$user) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
+            $isAllowed = $blog->allowedUsers()->where('user_id', $user->id)->exists();
+            $isCreator = $blog->created_by === $user->id;
+            if (!$isAllowed && !$isCreator) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
+        }
+
         $comment = new BlogComments();
         $comment->blog_id = $blog->id;
         $comment->user_id = $user->id;
@@ -334,6 +345,17 @@ class BlogsController extends Controller
 
         $blog = Blogs::where('id', $id)->first();
         $user = Auth::user();
+
+        if ($blog->privacy === 'private') {
+            if (!$user) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
+            $isAllowed = $blog->allowedUsers()->where('user_id', $user->id)->exists();
+            $isCreator = $blog->created_by === $user->id;
+            if (!$isAllowed && !$isCreator) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
+        }
 
         $blogReaction = BlogReactions::where([
             'blog_id' => $blog->id,

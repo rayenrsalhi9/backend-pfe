@@ -446,9 +446,7 @@ class ForumsTest extends TestCase
                 'tags' => [],
             ]);
 
-        // Note: The forums/update route only uses 'auth' middleware, not 'hasToken'
-        // Claims are checked via policy or controller logic
-        // This test documents the expected behavior
+        $response->assertStatus(200);
     }
 
     /* ============================================

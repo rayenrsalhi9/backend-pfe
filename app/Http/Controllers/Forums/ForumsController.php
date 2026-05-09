@@ -24,7 +24,7 @@ class ForumsController extends Controller
     function getAll(Request $request)
     {
         $viewer = Auth::id() ?? 'guest';
-        $cacheKey = $this->getCacheKey('forums', 'list', md5(json_encode($request->all())), $viewer);
+        $cacheKey = $this->getCacheKey('forums', 'list', $this->normalizeRequestParams($request->all()), $viewer);
         $ttl = $this->getCacheTtl('forums');
 
         $forums = $this->cacheRemember($cacheKey, 'forums', $ttl, function () use ($request) {
@@ -99,7 +99,6 @@ class ForumsController extends Controller
 
     function getAllForDashboard(Request $request)
     {
-        $user = Auth::user();
         $limit = $request->limit;
 
         $query = Forums::orderBy('created_at', 'DESC')
@@ -204,13 +203,14 @@ class ForumsController extends Controller
             $forum = new Forums();
             $forum->title = $request->title;
             $forum->content = $request->input('content');
-            $forum->privacy = $request->private ? 'private' : 'public';
+            $isPrivate = $request->boolean('private');
+            $forum->privacy = $isPrivate ? 'private' : 'public';
             $forum->created_by = $user->id;
             $forum->category_id = $request->category;
             $forum->closed = false;
             $forum->save();
 
-            if ($request->private && is_array($request->users)) {
+            if ($isPrivate && is_array($request->users)) {
                 $users = $request->users;
                 if (!in_array($user->id, $users)) {
                     $users[] = $user->id;
@@ -259,13 +259,15 @@ class ForumsController extends Controller
             }
             $forum->title = $request->title;
             $forum->content = $request->input('content');
-            $forum->privacy = $request->private ? 'private' : 'public';
+            $isPrivate = $request->boolean('private');
+            $forum->privacy = $isPrivate ? 'private' : 'public';
             $forum->category_id = $request->category;
             $forum->closed = $request->closed;
             $forum->save();
 
-            if ($request->private && is_array($request->users)) {
-                ForumUsers::where('forum_id', $forum->id)->delete();
+            ForumUsers::where('forum_id', $forum->id)->delete();
+
+            if ($isPrivate && is_array($request->users)) {
                 $users = $request->users;
                 if (!in_array($user->id, $users)) {
                     $users[] = $user->id;
@@ -276,8 +278,6 @@ class ForumsController extends Controller
                     $forumUser->user_id = $userId;
                     $forumUser->save();
                 }
-            } else if ($request->private === false || $request->private === 'false' || !$request->private) {
-                ForumUsers::where('forum_id', $forum->id)->delete();
             }
 
             if ($tags !== null) {
@@ -331,6 +331,17 @@ class ForumsController extends Controller
         }
         $user = Auth::user();
 
+        if ($forum->privacy === 'private') {
+            if (!$user) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
+            $isAllowed = $forum->allowedUsers()->where('user_id', $user->id)->exists();
+            $isCreator = $forum->created_by === $user->id;
+            if (!$isAllowed && !$isCreator) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
+        }
+
         $comment = new ForumComments();
         $comment->forum_id = $forum->id;
         $comment->user_id = $user->id;
@@ -377,6 +388,17 @@ class ForumsController extends Controller
             return response()->json(['message' => 'Not found'], 404);
         }
         $user = Auth::user();
+
+        if ($forum->privacy === 'private') {
+            if (!$user) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
+            $isAllowed = $forum->allowedUsers()->where('user_id', $user->id)->exists();
+            $isCreator = $forum->created_by === $user->id;
+            if (!$isAllowed && !$isCreator) {
+                return response()->json(['message' => 'Not found'], 404);
+            }
+        }
 
         $forumReaction = ForumReactions::where([
             'forum_id' => $forum->id,

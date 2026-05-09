@@ -391,6 +391,7 @@ class DocumentTest extends TestCase
     {
         $user = Users::factory()->create();
         $user2 = Users::factory()->create();
+        $user3 = Users::factory()->create();
         $categoryId = $this->createCategory($user->id);
         $docId = $this->createDocument($user->id, $categoryId);
 
@@ -398,6 +399,16 @@ class DocumentTest extends TestCase
         DB::table('roles')->insert([
             'id' => $roleId,
             'name' => 'Test Role',
+            'createdBy' => $user->id,
+            'modifiedBy' => $user->id,
+            'createdDate' => now(),
+            'modifiedDate' => now(),
+            'isDeleted' => 0,
+        ]);
+        $roleId2 = Uuid::uuid4()->toString();
+        DB::table('roles')->insert([
+            'id' => $roleId2,
+            'name' => 'Test Role 2',
             'createdBy' => $user->id,
             'modifiedBy' => $user->id,
             'createdDate' => now(),
@@ -413,9 +424,11 @@ class DocumentTest extends TestCase
                 'documentMetaDatas' => [],
                 'documentRolePermissions' => [
                     ['roleId' => $roleId, 'isAllowDownload' => 1, 'isTimeBound' => false],
+                    ['roleId' => $roleId2, 'isAllowDownload' => 1, 'isTimeBound' => false],
                 ],
                 'documentUserPermissions' => [
                     ['userId' => $user2->id, 'isAllowDownload' => 0, 'isTimeBound' => false],
+                    ['userId' => $user3->id, 'isAllowDownload' => 0, 'isTimeBound' => false],
                 ],
             ]);
 
@@ -423,11 +436,11 @@ class DocumentTest extends TestCase
 
         $this->assertDatabaseHas('documentAuditTrails', [
             'documentId' => $docId,
-            'assignToRoleId' => $roleId,
+            'assignToRoleId' => "$roleId,$roleId2",
         ]);
         $this->assertDatabaseHas('documentAuditTrails', [
             'documentId' => $docId,
-            'assignToUserId' => $user2->id,
+            'assignToUserId' => "$user2->id,$user3->id",
         ]);
     }
 

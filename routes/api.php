@@ -331,6 +331,7 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
     });
 
     // Document endpoints for dashboard
+    // TODO: Deprecated aliases of /dashboard/extension and /dashboard/transactions — remove in next major version
     Route::get('/document/extension', [DocumentController::class, 'countByExtension'])
         ->middleware('hasToken:DASHBOARD_VIEW_DASHBOARD');
     Route::get('/document/transactions', [DocumentAuditTrailController::class, 'documentsTransactions'])
@@ -342,9 +343,6 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::middleware('hasToken:REMINDER_EDIT_REMINDER')->group(function () {
         Route::get('/reminder/{id}', [ReminderController::class, 'edit']);
-    });
-
-    Route::middleware('hasToken:REMINDER_EDIT_REMINDER')->group(function () {
         Route::put('/reminder/{id}', [ReminderController::class, 'updateReminder']);
     });
 
@@ -354,11 +352,7 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::get('/reminder/all/current-user', [ReminderController::class, 'getReminderForLoginUser']);
 
-    Route::get('/reminder/all/currentuser', [ReminderController::class, 'getReminderForLoginUser']);
-
     Route::delete('/reminder/current-user/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
-
-    Route::delete('/reminder/currentuser/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
 
     Route::get('/reminder/calendar-events/{month}/{year}', [ReminderController::class, 'getCalendarEvents']);
 

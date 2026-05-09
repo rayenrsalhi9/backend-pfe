@@ -65,8 +65,10 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
             $documentRolePermissions = $request['documentRolePermissions'];
             $rolePermissionsArray = array();
             $assignedRoleIds = array();
+            $documentId = null;
 
             foreach ($documentRolePermissions as $docuemntrole) {
+                $documentId = $docuemntrole['documentId'];
                 if ($docuemntrole['isTimeBound']) {
                     $startdate1 = date('Y-m-d', strtotime(str_replace('/', '-', $docuemntrole['startDate'])));
                     $enddate1 = date('Y-m-d', strtotime(str_replace('/', '-', $docuemntrole['endDate'])));
@@ -97,9 +99,9 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
                 }
             }
 
-            if (!empty($assignedRoleIds)) {
+            if (!empty($assignedRoleIds) && $documentId) {
                 DocumentAuditTrails::create([
-                    'documentId' => $documentRolePermissions[0]['documentId'],
+                    'documentId' => $documentId,
                     'createdDate' =>  Carbon::now(),
                     'operationName' => DocumentOperationEnum::Add_Permission->value,
                     'assignToRoleId' => implode(',', $assignedRoleIds)
@@ -134,8 +136,10 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
 
             $documentUserPermissions = $request['documentUserPermissions'];
             $assignedUserIds = array();
+            $userDocumentId = null;
 
             foreach ($documentUserPermissions as $docuemntUser) {
+                $userDocumentId = $docuemntUser['documentId'];
                 if ($docuemntUser['isTimeBound']) {
                     $startdate1 = date('Y-m-d', strtotime(str_replace('/', '-', $docuemntUser['startDate'])));
                     $enddate1 = date('Y-m-d', strtotime(str_replace('/', '-', $docuemntUser['endDate'])));
@@ -161,9 +165,9 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
                 ]);
             }
 
-            if (!empty($assignedUserIds)) {
+            if (!empty($assignedUserIds) && $userDocumentId) {
                 DocumentAuditTrails::create([
-                    'documentId' => $documentUserPermissions[0]['documentId'],
+                    'documentId' => $userDocumentId,
                     'createdDate' =>  Carbon::now(),
                     'operationName' => DocumentOperationEnum::Add_Permission->value,
                     'assignToUserId' => implode(',', $assignedUserIds)
