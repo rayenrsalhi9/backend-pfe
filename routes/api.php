@@ -382,8 +382,9 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         Route::post('create', 'conversationCreate');
 
         Route::post('message', 'messageSend');
-        Route::put('message/{id}/seen', 'messageSeen');
-        Route::put('message/{id}/reaction', 'messageReaction');
+        Route::put('message/{id}/seen', [ConversationController::class, 'messageSeen']);
+        Route::put('message/{id}/delivered', [ConversationController::class, 'messageDelivered']);
+        Route::put('message/{id}/reaction', [ConversationController::class, 'messageReaction']);
     });
 });
 

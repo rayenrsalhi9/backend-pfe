@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use App\Models\ConversationUser;
 use App\Events\ConversationEvent;
 use App\Events\MessageReaction as EventsMessageReaction;
+use App\Events\MessageDelivered;
 use App\Events\MessageSeen;
 use App\Events\UserChatEvent;
 use App\Events\UserNotification;
@@ -77,15 +78,26 @@ class ConversationController extends Controller
                 return response()->json([
                     'data' => [],
                     'meta' => [
-                        'current_page' => 1,
-                        'per_page' => $perPage,
+                        'currentPage' => 1,
+                        'perPage' => $perPage,
                         'total' => 0,
-                        'last_page' => 1
+                        'lastPage' => 1
                     ]
                 ], 200);
             }
 
+            $groupIds = ConversationUser::select('conversation_id')
+                ->groupBy('conversation_id')
+                ->havingRaw('COUNT(*) > 2')
+                ->pluck('conversation_id')
+                ->toArray();
+
             $conversations = Conversation::whereIn('id', $conversationIds)
+                ->where(function ($q) use ($groupIds) {
+                    $q->whereNotNull('title')
+                      ->orWhereHas('messages')
+                      ->orWhereIn('id', $groupIds);
+                })
                 ->with(['lastMessage', 'lastMessage.sender', 'lastMessage.document', 'users'])
                 ->withMax('messages', 'created_at')
                 ->orderByDesc('messages_max_created_at')
@@ -95,10 +107,10 @@ class ConversationController extends Controller
             return response()->json([
                 'data' => $conversations->items(),
                 'meta' => [
-                    'current_page' => $conversations->currentPage(),
-                    'per_page' => $conversations->perPage(),
+                    'currentPage' => $conversations->currentPage(),
+                    'perPage' => $conversations->perPage(),
                     'total' => $conversations->total(),
-                    'last_page' => $conversations->lastPage()
+                    'lastPage' => $conversations->lastPage()
                 ]
             ], 200);
         } catch (\Throwable $th) {
@@ -186,22 +198,8 @@ class ConversationController extends Controller
             broadcast(new ConversationEvent(json_decode(json_encode($data), true)))->toOthers();
 
             foreach ($data->conversation['users'] as $key => $usr) {
-
                 if ($user->id != $usr->id) {
-
                     broadcast(new UserChatEvent(json_decode(json_encode($data), true), $usr->id))->toOthers();
-
-                    $notification = new UserNotifications();
-                    $notification->userId = $usr->id;
-                    $notification->type = 'message';
-                    if ($conversationMessage->type == 'msg') {
-                        $notification->message = /* $user->firstName . ' ' . $user->lastName . ' send a message : ' .  */ $conversationMessage->content;
-                    } else {
-                        $notification->message = /* $user->firstName . ' ' . $user->lastName . ' send a file : ' .  */ $conversationMessage->content;
-                    }
-                    $notification->save();
-
-                    broadcast(new UserNotification(json_decode(json_encode($notification), true), $usr->id, 'message'))->toOthers();
                 }
             }
 
@@ -227,6 +225,21 @@ class ConversationController extends Controller
         return response()->json($message, 200);
     }
 
+    function messageDelivered($id)
+    {
+        $conversationMessage = ConversationMessage::where('id', $id)->first();
+        $conversationMessage->is_delivered = new DateTime();
+        $conversationMessage->save();
+
+        $message = $conversationMessage->load('sender', 'conversation', 'document', 'conversation.users', 'reactions');
+
+        $data = MessageResource::make($message);
+
+        broadcast(new MessageDelivered(json_decode(json_encode($data), true)))->toOthers();
+
+        return response()->json($message, 200);
+    }
+
     function messageReaction($id, Request $request)
     {
 
@@ -236,26 +249,63 @@ class ConversationController extends Controller
                 'sender_id' => $request->uid
             ])->first();
 
-            if ($messageReaction) {
+            $reactionType = $request->type;
+            $reactorId = $request->uid;
+            $reactedMessage = ConversationMessage::where('id', $request->mid)->first();
 
-                if ($messageReaction->type == $request->type) {
+            if (!$reactedMessage) {
+                return response()->json(['error' => 'Message not found'], 404);
+            }
+
+            $reactionTexts = [
+                'like'    => 'Liked your message',
+                'heart'   => 'React with ❤️ to your message',
+                'dislike' => 'React with 👎 to your message',
+            ];
+            $reactionText = $reactionTexts[$reactionType] ?? 'Reacted to your message';
+
+            $existingReactionMsg = ConversationMessage::where([
+                'conversation_id' => $reactedMessage->conversation_id,
+                'sender_id' => $reactorId,
+                'type' => 'reaction',
+            ])->where('content', 'LIKE', '%' . "\n" . $request->mid)
+              ->first();
+
+            if ($messageReaction) {
+                if ($messageReaction->type == $reactionType) {
                     $messageReaction->delete();
+                    if ($existingReactionMsg) {
+                        $existingReactionMsg->delete();
+                    }
                 } else {
-                    $messageReaction->conversation_message_id = $request->mid;
-                    $messageReaction->type = $request->type;
-                    $messageReaction->sender_id = $request->uid;
+                    $messageReaction->type = $reactionType;
+                    $messageReaction->sender_id = $reactorId;
                     $messageReaction->save();
+                    if ($existingReactionMsg) {
+                        $existingReactionMsg->content = $reactionText . "\n" . $request->mid;
+                        $existingReactionMsg->save();
+                    }
                 }
             } else {
                 $messageReaction = new MessageReaction();
                 $messageReaction->conversation_message_id = $request->mid;
-                $messageReaction->type = $request->type;
-                $messageReaction->sender_id = $request->uid;
+                $messageReaction->type = $reactionType;
+                $messageReaction->sender_id = $reactorId;
                 $messageReaction->save();
+
+                $reactionText = $reactionType === 'like' ? 'Liked your message' : "Reacted $reactionType to your message";
+
+                $reactionMsg = new ConversationMessage();
+                $reactionMsg->conversation_id = $reactedMessage->conversation_id;
+                $reactionMsg->sender_id = $reactorId;
+                $reactionMsg->content = $reactionText;
+                $reactionMsg->type = 'reaction';
+                $reactionMsg->document_id = null;
+                $reactionMsg->is_read = null;
+                $reactionMsg->save();
             }
 
-            $conversationMessage = ConversationMessage::where('id', $request->mid)->first();
-            $message = $conversationMessage->load('sender', 'conversation', 'document', 'conversation.users', 'reactions');
+            $message = $reactedMessage->load('sender', 'conversation', 'document', 'conversation.users', 'reactions');
             $data = MessageResource::make($message);
 
             broadcast(new EventsMessageReaction(json_decode(json_encode($data), true)))->toOthers();
