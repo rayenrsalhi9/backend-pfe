@@ -101,7 +101,7 @@ class UserController extends Controller
         $model->phoneNumber = $request->phoneNumber;
         $model->userName = $request->userName;
         $model->email = $request->email;
-        $model->avatar = $request->avatar;
+        $model->avatar = $request->avatar ?? $model->avatar;
         $model->direction = $request->direction;
 
         return  response()->json($this->userRepository->updateUser($model, $id, $request['roleIds']), 200);

@@ -170,7 +170,8 @@ class AuthController extends Controller
                 'lastName' => $user->lastName,
                 'email' => $user->email,
                 'userName' => $user->userName,
-                'phoneNumber' => $user->phoneNumber
+                'phoneNumber' => $user->phoneNumber,
+                'avatar' => $user->avatar
             ],
             'authorisation' => [
                 'token' => $token,
