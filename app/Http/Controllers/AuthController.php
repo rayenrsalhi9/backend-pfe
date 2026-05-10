@@ -272,7 +272,7 @@ class AuthController extends Controller
                 Mail::to($request->all()['email'])->send(new ResetPassword($token));
 
                 return response()->json([
-                    'status' => 'error',
+                    'status' => 'success',
                     'message' => 'Please check your email for a 6 digit pin',
                 ], 200);
             }
@@ -343,7 +343,7 @@ class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'email' => ['required', 'string', 'email', 'max:255'],
-            'password' => ['required', 'string'],
+            'password' => ['required', 'string', 'min:8', 'regex:/^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>~\-_=+\[\];\'\\\\\/])(?=.*[0-9]).{8,}$/'],
             'token' => ['required', 'string'],
         ]);
 
@@ -376,7 +376,7 @@ class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
-            'password' => ['required', 'string', 'min:8'],
+            'password' => ['required', 'string', 'min:8', 'regex:/^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>~\-_=+\[\];\'\\\\\/])(?=.*[0-9]).{8,}$/'],
             'username' => ['required', 'string', 'max:255', 'unique:users,userName'],
             'firstName' => ['nullable', 'string', 'max:255'],
             'lastName' => ['nullable', 'string', 'max:255'],

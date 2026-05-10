@@ -174,8 +174,6 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         Route::get('/dashboard/get-document-by-category', [DocumentController::class, 'getDocumentsByCategoryQuery']);
         Route::get('/dashboard/transactions', [DocumentAuditTrailController::class, 'documentsTransactions']);
         Route::get('/dashboard/extension', [DocumentController::class, 'countByExtension']);
-        Route::get('/user', [UserController::class, 'index']);
-
         // Dashboard content endpoints - full access for authorized users
         Route::get('/dashboard/blogs', [BlogsController::class, 'getAllForDashboard'])
             ->middleware('hasToken:BLOG_VIEW_BLOGS');
