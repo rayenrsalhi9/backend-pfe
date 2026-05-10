@@ -52,6 +52,38 @@ return new class extends Migration
             );
         }
 
+        $orphanUsers = DB::select("
+            SELECT DISTINCT t.assignToUserId
+            FROM documentAuditTrails t
+            WHERE t.assignToUserId IS NOT NULL
+              AND t.assignToUserId != ''
+              AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = t.assignToUserId)
+        ");
+
+        if (!empty($orphanUsers)) {
+            $ids = implode(', ', array_column($orphanUsers, 'assignToUserId'));
+            throw new RuntimeException(
+                "Cannot roll back: assignToUserId values $ids in documentAuditTrails " .
+                "do not exist in users table. Fix data before rolling back."
+            );
+        }
+
+        $orphanRoles = DB::select("
+            SELECT DISTINCT t.assignToRoleId
+            FROM documentAuditTrails t
+            WHERE t.assignToRoleId IS NOT NULL
+              AND t.assignToRoleId != ''
+              AND NOT EXISTS (SELECT 1 FROM roles r WHERE r.id = t.assignToRoleId)
+        ");
+
+        if (!empty($orphanRoles)) {
+            $ids = implode(', ', array_column($orphanRoles, 'assignToRoleId'));
+            throw new RuntimeException(
+                "Cannot roll back: assignToRoleId values $ids in documentAuditTrails " .
+                "do not exist in roles table. Fix data before rolling back."
+            );
+        }
+
         DB::transaction(function () {
             $columns = DB::select("
                 SELECT COLUMN_NAME, COLUMN_TYPE

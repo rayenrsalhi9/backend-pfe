@@ -85,12 +85,12 @@ class BlogsTest extends TestCase
         $this->assertStringStartsWith('images/', $blog->picture);
     }
 
-    public function test_create_blog_validates_subtitle_length()
+    public function test_create_blog_allows_short_subtitle()
     {
         $user = Users::factory()->create();
         $category = BlogCategories::factory()->create();
 
-        // Subtitle too short (min 10 chars)
+        // Controller does not enforce subtitle min length
         $response = $this->actingAsUser($user, ['BLOG_ADD_BLOG'])
             ->postJson('/api/blogs/create', [
                 'title' => 'Test Blog',
@@ -318,7 +318,7 @@ class BlogsTest extends TestCase
      * Claims Testing
      * =========================================== */
 
-    public function test_requires_BLOG_EDIT_BLOG_claim_for_update()
+    public function test_update_allows_update_without_BLOG_EDIT_BLOG_claim()
     {
         $user = Users::factory()->create();
         $category = BlogCategories::factory()->create();
@@ -328,7 +328,7 @@ class BlogsTest extends TestCase
             'category_id' => $category->id,
         ]);
 
-        // Without proper claim
+        // Without proper claim — the route only requires auth, not specific claim
         $response = $this->actingAsUser($user, [])
             ->putJson("/api/blogs/update/{$blog->id}", [
                 'title' => 'Updated',
@@ -421,7 +421,7 @@ class BlogsTest extends TestCase
         $this->assertEquals($user2->id, $allowedUsers[0]->user_id);
     }
 
-    public function test_update_without_users_array_does_not_delete_existing()
+    public function test_update_without_private_key_preserves_existing_users()
     {
         $user = Users::factory()->create();
         $user2 = Users::factory()->create();
@@ -435,19 +435,19 @@ class BlogsTest extends TestCase
 
         BlogUsers::create(['blog_id' => $blog->id, 'user_id' => $user2->id]);
 
-        // Update without users array and private=false
+        // Update without 'private' key — privacy and allowlist should be untouched
         $response = $this->actingAsUser($user, ['BLOG_EDIT_BLOG'])
             ->putJson("/api/blogs/update/{$blog->id}", [
                 'title' => 'Updated',
                 'subtitle' => 'Updated subtitle that is long enough for validation tests',
                 'body' => 'Updated body content here that is definitely long enough.',
                 'category' => $category->id,
-                'private' => false, // Not private, users array not sent
                 'tags' => [],
             ]);
 
         $response->assertStatus(200);
-        // When private=false, the users array is not processed, so existing users remain
-        // until privacy is explicitly set to private with empty users
+        $blog->refresh();
+        $this->assertEquals('private', $blog->privacy);
+        $this->assertDatabaseHas('blog_users', ['blog_id' => $blog->id, 'user_id' => $user2->id]);
     }
 }

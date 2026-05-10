@@ -12,6 +12,7 @@ use App\Http\Controllers\Traits\HasPermissionTrait;
 use App\Traits\CacheableTrait;
 use App\Models\ArticleComments;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ArticlesController extends Controller
@@ -154,7 +155,7 @@ class ArticlesController extends Controller
       $article->title = $request->title;
       $article->short_text = $request->description;
       $article->long_text = $request->body;
-      $article->picture = isset($request->picture) ? $this->saveFile($request->picture) : '';
+      $article->picture = $request->filled('picture') ? $this->saveFile($request->picture) : '';
       $article->privacy = $isPrivate ? 'private' : 'public';
       $article->created_by = $user->id;
       $article->article_category_id = $request->category;
@@ -165,7 +166,7 @@ class ArticlesController extends Controller
         if (!in_array($user->id, $users)) {
             $users[] = $user->id;
         }
-        foreach ($users as $key => $userId) {
+        foreach ($users as $userId) {
           $articleUser = new ArticleUsers();
           $articleUser->article_id = $article->id;
           $articleUser->user_id = $userId;
@@ -222,29 +223,33 @@ class ArticlesController extends Controller
 
       $isPrivate = $request->boolean('private');
       $article = Articles::where('id', $id)->first();
+      if (!$article) {
+        return response()->json(['message' => 'Not found'], 404);
+      }
       $article->title = $request->title;
       $article->short_text = $request->description;
       $article->long_text = $request->body;
       $article->privacy = $isPrivate ? 'private' : 'public';
-      $article->picture = isset($request->picture) ? $this->saveFile($request->picture) : $article->picture;
-      $article->created_by = $user->id;
+      $article->picture = $request->filled('picture') ? $this->saveFile($request->picture) : $article->picture;
       $article->article_category_id = $request->category;
       $article->save();
 
-      ArticleUsers::where('article_id', $id)->delete();
+      DB::transaction(function () use ($id, $isPrivate, $user, $request, $article) {
+        ArticleUsers::where('article_id', $id)->delete();
 
-      if ($isPrivate) {
-        $users = is_array($request->users) ? $request->users : [];
-        if (!in_array($user->id, $users)) {
-            $users[] = $user->id;
+        if ($isPrivate) {
+          $users = is_array($request->users) ? $request->users : [];
+          if (!in_array($user->id, $users)) {
+              $users[] = $user->id;
+          }
+          foreach ($users as $userId) {
+            $articleUser = new ArticleUsers();
+            $articleUser->article_id = $article->id;
+            $articleUser->user_id = $userId;
+            $articleUser->save();
+          }
         }
-        foreach ($users as $key => $userId) {
-          $articleUser = new ArticleUsers();
-          $articleUser->article_id = $article->id;
-          $articleUser->user_id = $userId;
-          $articleUser->save();
-        }
-      }
+      });
 
       $response = $article->load('category', 'users', 'users.user', 'creator');
 

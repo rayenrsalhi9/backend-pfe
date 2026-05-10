@@ -78,8 +78,8 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             $isAllowDownloadSql .= rtrim(str_repeat('?,', count($roleIds)), ',');
             $bindings = array_merge([$userId], $roleIds);
         } else {
-            $isAllowDownloadSql .= '?';
-            $bindings = [$userId, 'none'];
+            $isAllowDownloadSql .= 'NULL';
+            $bindings = [$userId];
         }
 
         $isAllowDownloadSql .= ")) THEN 1 ELSE 0 END) as isAllowDownload";
@@ -145,8 +145,10 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         }
 
         if (property_exists($attributes, 'name') && $attributes->name) {
-            $query = $query->where('documents.name', 'like', '%' . $attributes->name . '%')
-                ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+            $query = $query->where(function ($q) use ($attributes) {
+                $q->where('documents.name', 'like', '%' . $attributes->name . '%')
+                  ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+            });
         }
 
         if (property_exists($attributes, 'metaTags') && $attributes->metaTags) {
@@ -408,21 +410,13 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
                 }
             }
 
-            if (!empty($assignedRoleIds)) {
+            if (!empty($assignedRoleIds) || !empty($assignedUserIds)) {
                 DocumentAuditTrails::create([
                     'documentId' => $id,
                     'createdDate' => Carbon::now(),
                     'operationName' => DocumentOperationEnum::Add_Permission->value,
-                    'assignToRoleId' => implode(',', $assignedRoleIds)
-                ]);
-            }
-
-            if (!empty($assignedUserIds)) {
-                DocumentAuditTrails::create([
-                    'documentId' => $id,
-                    'createdDate' => Carbon::now(),
-                    'operationName' => DocumentOperationEnum::Add_Permission->value,
-                    'assignToUserId' => implode(',', $assignedUserIds)
+                    'assignToRoleId' => !empty($assignedRoleIds) ? implode(',', $assignedRoleIds) : null,
+                    'assignToUserId' => !empty($assignedUserIds) ? implode(',', $assignedUserIds) : null
                 ]);
             }
 
@@ -476,9 +470,27 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             ->get();
             
         $roleIds = $userRoles->pluck('roleId')->toArray();
-        $roleIdList = !empty($roleIds) ? implode(',', array_map(function ($id) {
-            return "'$id'";
-        }, $roleIds)) : "'none'";
+
+        $isAllowDownloadSql = "(CASE WHEN EXISTS (
+            SELECT 1 FROM documentUserPermissions
+            WHERE documentUserPermissions.documentId = documents.id
+            AND documentUserPermissions.userId = ?
+            AND documentUserPermissions.isAllowDownload = 1
+        ) OR EXISTS (
+            SELECT 1 FROM documentRolePermissions
+            WHERE documentRolePermissions.documentId = documents.id
+            AND documentRolePermissions.isAllowDownload = 1
+            AND documentRolePermissions.roleId IN (";
+
+        if (!empty($roleIds)) {
+            $isAllowDownloadSql .= rtrim(str_repeat('?,', count($roleIds)), ',');
+            $isAllowBindings = array_merge([$userId], $roleIds);
+        } else {
+            $isAllowDownloadSql .= 'NULL';
+            $isAllowBindings = [$userId];
+        }
+
+        $isAllowDownloadSql .= ")) THEN 1 ELSE 0 END) as isAllowDownload";
 
         $selectColumns = [
             'documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName',
@@ -489,17 +501,6 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             DB::raw("(SELECT max(documentRolePermissions.endDate) FROM documentRolePermissions
                      WHERE documentRolePermissions.documentId = documents.id and documentRolePermissions.isTimeBound =1
                      GROUP BY documentRolePermissions.documentId) as maxRolePermissionEndDate"),
-            DB::raw("(CASE WHEN EXISTS (
-                SELECT 1 FROM documentUserPermissions
-                WHERE documentUserPermissions.documentId = documents.id
-                AND documentUserPermissions.userId = '$userId'
-                AND documentUserPermissions.isAllowDownload = 1
-            ) OR EXISTS (
-                SELECT 1 FROM documentRolePermissions
-                WHERE documentRolePermissions.documentId = documents.id
-                AND documentRolePermissions.isAllowDownload = 1
-                AND documentRolePermissions.roleId IN ($roleIdList)
-            ) THEN 1 ELSE 0 END) as isAllowDownload")
         ];
         
         if ($includeCreatorEmail) {
@@ -507,6 +508,7 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         }
         
         $query = Documents::select($selectColumns)
+            ->selectRaw($isAllowDownloadSql, $isAllowBindings)
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
             ->join('users', 'documents.createdBy', '=', 'users.id')
             ->where(function ($query) use ($userId, $userRoles) {
@@ -564,8 +566,10 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         }
 
         if (property_exists($attributes, 'name') && $attributes->name) {
-            $query = $query->where('documents.name', 'like', '%' . $attributes->name . '%')
-                ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+            $query = $query->where(function ($q) use ($attributes) {
+                $q->where('documents.name', 'like', '%' . $attributes->name . '%')
+                  ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+            });
         }
 
         if (property_exists($attributes, 'metaTags') && $attributes->metaTags) {
@@ -641,8 +645,10 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         }
 
         if (property_exists($attributes, 'name') && $attributes->name) {
-            $query = $query->where('documents.name', 'like', '%' . $attributes->name . '%')
-                ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+            $query = $query->where(function ($q) use ($attributes) {
+                $q->where('documents.name', 'like', '%' . $attributes->name . '%')
+                  ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+            });
         }
 
         if (property_exists($attributes, 'metaTags') && $attributes->metaTags) {

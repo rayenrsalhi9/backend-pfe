@@ -327,18 +327,19 @@ class ForumsTest extends TestCase
 
     public function test_getAll_returns_private_forum_for_allowed_user()
     {
-        $user = Users::factory()->create();
+        $owner = Users::factory()->create();
+        $allowedUser = Users::factory()->create();
         $category = ForumCategories::factory()->create();
 
         $forum = Forums::factory()->create([
             'privacy' => 'private',
-            'created_by' => $user->id,
+            'created_by' => $owner->id,
             'category_id' => $category->id,
         ]);
 
-        ForumUsers::create(['forum_id' => $forum->id, 'user_id' => $user->id]);
+        ForumUsers::create(['forum_id' => $forum->id, 'user_id' => $allowedUser->id]);
 
-        $response = $this->actingAsUser($user)
+        $response = $this->actingAsUser($allowedUser)
             ->getJson('/api/forums');
 
         $response->assertStatus(200);
@@ -426,7 +427,7 @@ class ForumsTest extends TestCase
      * Claims Testing
      * ============================================ */
 
-    public function test_update_requires_FORUM_EDIT_TOPIC_claim()
+    public function test_update_allows_update_without_FORUM_EDIT_TOPIC_claim()
     {
         $user = Users::factory()->create();
         $category = ForumCategories::factory()->create();
@@ -436,14 +437,12 @@ class ForumsTest extends TestCase
             'category_id' => $category->id,
         ]);
 
-        // Without claim
+        // Without claim — the route only requires auth, not specific claim
         $response = $this->actingAsUser($user, [])
             ->putJson("/api/forums/update/{$forum->id}", [
                 'title' => 'Updated',
                 'content' => 'Updated content here that is long enough.',
                 'category' => $category->id,
-                'private' => false,
-                'tags' => [],
             ]);
 
         $response->assertStatus(200);
@@ -453,7 +452,7 @@ class ForumsTest extends TestCase
      * Additional Edge Cases
      * ============================================ */
 
-    public function test_update_preserves_fields_when_not_provided()
+    public function test_update_preserves_privacy_when_private_omitted()
     {
         $user = Users::factory()->create();
         $category = ForumCategories::factory()->create();
@@ -463,15 +462,17 @@ class ForumsTest extends TestCase
             'content' => 'Original content here that is long enough.',
             'created_by' => $user->id,
             'category_id' => $category->id,
-            'privacy' => 'public',
+            'privacy' => 'private',
+            'closed' => false,
         ]);
+
+        ForumUsers::create(['forum_id' => $forum->id, 'user_id' => $user->id]);
 
         $response = $this->actingAsUser($user, ['FORUM_EDIT_TOPIC'])
             ->putJson("/api/forums/update/{$forum->id}", [
                 'title' => 'Updated Title Only',
                 'content' => 'Original content here that is long enough.',
                 'category' => $category->id,
-                'private' => false,
                 'tags' => [],
                 'closed' => false,
             ]);
@@ -479,6 +480,8 @@ class ForumsTest extends TestCase
         $response->assertStatus(200);
         $forum->refresh();
         $this->assertEquals('Updated Title Only', $forum->title);
+        $this->assertEquals('private', $forum->privacy);
+        $this->assertDatabaseHas('forum_users', ['forum_id' => $forum->id, 'user_id' => $user->id]);
     }
 
     public function test_create_validates_required_fields()
@@ -488,7 +491,6 @@ class ForumsTest extends TestCase
         $response = $this->actingAsUser($user, ['FORUM_ADD_TOPIC'])
             ->postJson('/api/forums/create', []);
 
-        // The controller uses try-catch, returns 500 on validation failure
         $response->assertStatus(500);
     }
 

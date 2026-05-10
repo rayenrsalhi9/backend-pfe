@@ -210,8 +210,8 @@ class ForumsController extends Controller
             $forum->closed = false;
             $forum->save();
 
-            if ($isPrivate && is_array($request->users)) {
-                $users = $request->users;
+            if ($isPrivate) {
+                $users = is_array($request->users) ? $request->users : [];
                 if (!in_array($user->id, $users)) {
                     $users[] = $user->id;
                 }
@@ -259,24 +259,28 @@ class ForumsController extends Controller
             }
             $forum->title = $request->title;
             $forum->content = $request->input('content');
-            $isPrivate = $request->boolean('private');
-            $forum->privacy = $isPrivate ? 'private' : 'public';
             $forum->category_id = $request->category;
             $forum->closed = $request->closed;
             $forum->save();
 
-            ForumUsers::where('forum_id', $forum->id)->delete();
+            if ($request->has('private')) {
+                $isPrivate = $request->boolean('private');
+                $forum->privacy = $isPrivate ? 'private' : 'public';
+                $forum->save();
 
-            if ($isPrivate && is_array($request->users)) {
-                $users = $request->users;
-                if (!in_array($user->id, $users)) {
-                    $users[] = $user->id;
-                }
-                foreach ($users as $userId) {
-                    $forumUser = new ForumUsers();
-                    $forumUser->forum_id = $forum->id;
-                    $forumUser->user_id = $userId;
-                    $forumUser->save();
+                ForumUsers::where('forum_id', $forum->id)->delete();
+
+                if ($isPrivate) {
+                    $users = is_array($request->users) ? $request->users : [];
+                    if (!in_array($user->id, $users)) {
+                        $users[] = $user->id;
+                    }
+                    foreach ($users as $userId) {
+                        $forumUser = new ForumUsers();
+                        $forumUser->forum_id = $forum->id;
+                        $forumUser->user_id = $userId;
+                        $forumUser->save();
+                    }
                 }
             }
 

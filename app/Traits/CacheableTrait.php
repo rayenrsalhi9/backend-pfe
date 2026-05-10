@@ -88,15 +88,19 @@ trait CacheableTrait
     protected function normalizeRequestParams(array $params): string
     {
         $normalized = $this->recursiveSort($params);
-        return md5(json_encode($normalized));
+        $encoded = json_encode($normalized);
+        if ($encoded === false) {
+            $encoded = serialize($normalized);
+        }
+        return md5($encoded);
     }
 
-    private function recursiveSort(array &$array): array
+    private function recursiveSort(array $array): array
     {
         ksort($array);
-        foreach ($array as &$value) {
+        foreach ($array as $key => $value) {
             if (is_array($value)) {
-                $this->recursiveSort($value);
+                $array[$key] = $this->recursiveSort($value);
             }
         }
         return $array;

@@ -15,6 +15,7 @@ use App\Models\Tags;
 use App\Models\BlogUsers;
 use App\Models\ResponseAuditTrails;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class BlogsController extends Controller
@@ -196,49 +197,53 @@ class BlogsController extends Controller
 
         try {
 
-            $blog = new Blogs();
-            $blog->title = $request->title;
-            $blog->subtitle = $request->subtitle;
-            $blog->body = $request->body;
-            $blog->picture = isset($request->picture) ? $this->saveFile($request->picture) : '';
-            $isPrivate = $request->boolean('private');
-            $blog->privacy = $isPrivate ? 'private' : 'public';
-            $blog->created_by = $user->id;
-            $blog->category_id = $request->category;
-            $blog->save();
+            DB::transaction(function () use ($request, $user, $tags) {
+                $blog = new Blogs();
+                $blog->title = $request->title;
+                $blog->subtitle = $request->subtitle;
+                $blog->body = $request->body;
+                $blog->picture = $request->filled('picture') ? $this->saveFile($request->picture) : '';
+                $isPrivate = $request->boolean('private');
+                $blog->privacy = $isPrivate ? 'private' : 'public';
+                $blog->created_by = $user->id;
+                $blog->category_id = $request->category;
+                $blog->save();
 
-            if ($isPrivate && is_array($request->users)) {
-                $users = $request->users;
-                if (!in_array($user->id, $users)) {
-                    $users[] = $user->id;
+                if ($isPrivate && is_array($request->users)) {
+                    $users = $request->users;
+                    if (!in_array($user->id, $users)) {
+                        $users[] = $user->id;
+                    }
+                    foreach ($users as $userId) {
+                        $blogUser = new BlogUsers();
+                        $blogUser->blog_id = $blog->id;
+                        $blogUser->user_id = $userId;
+                        $blogUser->save();
+                    }
                 }
-                foreach ($users as $userId) {
-                    $blogUser = new BlogUsers();
-                    $blogUser->blog_id = $blog->id;
-                    $blogUser->user_id = $userId;
-                    $blogUser->save();
-                }
-            }
 
-            if ($tags && count($tags) > 0) {
-                foreach ($tags as $key => $tag) {
-                    $blogTag = new Tags();
-                    $blogTag->blog_id = $blog->id;
-                    $blogTag->metatag = $tag['label'];
-                    $blogTag->created_by = $user->id;
-                    $blogTag->save();
+                if ($tags && count($tags) > 0) {
+                    foreach ($tags as $tag) {
+                        $blogTag = new Tags();
+                        $blogTag->blog_id = $blog->id;
+                        $blogTag->metatag = $tag['label'];
+                        $blogTag->created_by = $user->id;
+                        $blogTag->save();
+                    }
                 }
-            }
 
-            $response = $blog->load('category', 'creator', 'tags', 'allowedUsers');
+                $this->blogResponse = $blog->load('category', 'creator', 'tags', 'allowedUsers');
+            });
 
             $this->flushCacheTag('blogs');
 
-            return response()->json($response, 200);
+            return response()->json($this->blogResponse, 200);
         } catch (\Throwable $th) {
             return response($th->getMessage(), 500);
         }
     }
+
+    private $blogResponse;
 
     function update($id, Request $request)
     {
@@ -249,44 +254,52 @@ class BlogsController extends Controller
         try {
 
             $blog = Blogs::where('id', $id)->first();
-
-            $blog->title = $request->title;
-            $blog->subtitle = $request->subtitle;
-            $blog->body = $request->body;
-            $blog->picture = isset($request->picture) ? $this->saveFile($request->picture) : $blog->picture;
-            $isPrivate = $request->boolean('private');
-            $blog->privacy = $isPrivate ? 'private' : 'public';
-            $blog->created_by = $user->id;
-            $blog->category_id = $request->category;
-            $blog->save();
-
-            BlogUsers::where('blog_id', $id)->delete();
-
-            if ($isPrivate && is_array($request->users)) {
-                $users = $request->users;
-                if (!in_array($user->id, $users)) {
-                    $users[] = $user->id;
-                }
-                foreach ($users as $userId) {
-                    $blogUser = new BlogUsers();
-                    $blogUser->blog_id = $blog->id;
-                    $blogUser->user_id = $userId;
-                    $blogUser->save();
-                }
+            if (!$blog) {
+                return response()->json(['message' => 'Not found'], 404);
             }
 
-            if ($tags && count($tags) > 0) {
+            DB::transaction(function () use ($blog, $id, $request, $user, $tags) {
+                $blog->title = $request->title;
+                $blog->subtitle = $request->subtitle;
+                $blog->body = $request->body;
+                $blog->picture = $request->filled('picture') ? $this->saveFile($request->picture) : $blog->picture;
+                $blog->category_id = $request->category;
+                $blog->save();
 
-                Tags::where('blog_id', $blog->id)->delete();
+                if ($request->has('private')) {
+                    $isPrivate = $request->boolean('private');
+                    $blog->privacy = $isPrivate ? 'private' : 'public';
+                    $blog->save();
 
-                foreach ($tags as $key => $tag) {
-                    $blogTag = new Tags();
-                    $blogTag->blog_id = $blog->id;
-                    $blogTag->metatag = $tag['label'];
-                    $blogTag->created_by = $user->id;
-                    $blogTag->save();
+                    BlogUsers::where('blog_id', $id)->delete();
+
+                    if ($isPrivate && is_array($request->users)) {
+                        $users = $request->users;
+                        if (!in_array($user->id, $users)) {
+                            $users[] = $user->id;
+                        }
+                        foreach ($users as $userId) {
+                            $blogUser = new BlogUsers();
+                            $blogUser->blog_id = $blog->id;
+                            $blogUser->user_id = $userId;
+                            $blogUser->save();
+                        }
+                    }
                 }
-            }
+
+                if ($tags && count($tags) > 0) {
+
+                    Tags::where('blog_id', $blog->id)->delete();
+
+                    foreach ($tags as $key => $tag) {
+                        $blogTag = new Tags();
+                        $blogTag->blog_id = $blog->id;
+                        $blogTag->metatag = $tag['label'];
+                        $blogTag->created_by = $user->id;
+                        $blogTag->save();
+                    }
+                }
+            });
 
             $response = $blog->load('category', 'creator', 'tags', 'allowedUsers');
 
@@ -314,6 +327,9 @@ class BlogsController extends Controller
     {
 
         $blog = Blogs::where('id', $id)->first();
+        if (!$blog) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
         $user = Auth::user();
 
         if ($blog->privacy === 'private') {
@@ -344,6 +360,9 @@ class BlogsController extends Controller
     {
 
         $blog = Blogs::where('id', $id)->first();
+        if (!$blog) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
         $user = Auth::user();
 
         if ($blog->privacy === 'private') {
