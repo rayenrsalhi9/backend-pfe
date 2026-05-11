@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use App\Repositories\Contracts\UserRepositoryInterface;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 
 class AuthController extends Controller
 {
@@ -25,6 +26,19 @@ class AuthController extends Controller
     public function __construct(UserRepositoryInterface $userRepository)
     {
         $this->userRepository = $userRepository;
+    }
+
+    public static function passwordRules($required = true)
+    {
+        $rules = [
+            $required ? 'required' : 'nullable',
+            'string',
+            PasswordRule::min(8)
+                ->mixedCase()
+                ->numbers()
+                ->symbols(),
+        ];
+        return $rules;
     }
 
     public function login(Request $request)
@@ -372,7 +386,7 @@ class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'email' => ['required', 'string', 'email', 'max:255'],
-            'password' => ['required', 'string', 'min:8', 'regex:/^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>~\-_=+\[\];\'\\\\\/])(?=.*[0-9]).{8,}$/'],
+            'password' => self::passwordRules(),
             'token' => ['required', 'string'],
         ]);
 
@@ -405,7 +419,7 @@ class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
-            'password' => ['required', 'string', 'min:8', 'regex:/^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>~\-_=+\[\];\'\\\\\/])(?=.*[0-9]).{8,}$/'],
+            'password' => self::passwordRules(),
             'username' => ['required', 'string', 'max:255', 'unique:users,userName'],
             'firstName' => ['nullable', 'string', 'max:255'],
             'lastName' => ['nullable', 'string', 'max:255'],

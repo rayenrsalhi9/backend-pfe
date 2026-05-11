@@ -123,8 +123,8 @@ class ForumsTest extends TestCase
         $user3 = Users::factory()->create();
         $category = ForumCategories::factory()->create();
 
-        // Backend only saves users from request, won't auto-add creator
-        // Frontend adds creator in prepareFormData()
+        // Backend auto-adds creator to the users list if not present
+        // Frontend also adds creator in prepareFormData() for redundancy
         $response = $this->actingAsUser($user, ['FORUM_ADD_TOPIC'])
             ->postJson('/api/forums/create', [
                 'title' => 'Private Forum',
@@ -148,14 +148,14 @@ class ForumsTest extends TestCase
         $this->assertDatabaseHas('forum_users', ['forum_id' => $forumId, 'user_id' => $user3->id]);
     }
 
-    public function test_create_private_forum_includes_creator_from_request()
+    public function test_create_private_forum_includes_creator_when_provided_in_request()
     {
         $user = Users::factory()->create();
         $user2 = Users::factory()->create();
         $category = ForumCategories::factory()->create();
 
-        // Backend does NOT auto-add creator - frontend must include in users array
-        // This test documents the expected behavior when frontend sends correct data
+        // Backend auto-adds creator, but this test documents behavior when frontend also includes it
+        // as done in prepareFormData()
         $response = $this->actingAsUser($user, ['FORUM_ADD_TOPIC'])
             ->postJson('/api/forums/create', [
                 'title' => 'Private Forum',
@@ -163,6 +163,30 @@ class ForumsTest extends TestCase
                 'category' => $category->id,
                 'private' => true,
                 'users' => [$user->id, $user2->id], // Frontend adds creator
+                'tags' => [],
+            ]);
+
+        $response->assertStatus(200);
+        $forumId = $response->json()['id'];
+        $this->assertDatabaseCount('forum_users', 2); // creator + user2
+        $this->assertDatabaseHas('forum_users', ['forum_id' => $forumId, 'user_id' => $user->id]);
+        $this->assertDatabaseHas('forum_users', ['forum_id' => $forumId, 'user_id' => $user2->id]);
+    }
+
+    public function test_create_private_forum_auto_adds_creator_when_omitted()
+    {
+        $user = Users::factory()->create();
+        $user2 = Users::factory()->create();
+        $category = ForumCategories::factory()->create();
+
+        // Backend explicitly pushes creator into users list
+        $response = $this->actingAsUser($user, ['FORUM_ADD_TOPIC'])
+            ->postJson('/api/forums/create', [
+                'title' => 'Private Forum Auto Add',
+                'content' => 'Private content here that is long enough for validation.',
+                'category' => $category->id,
+                'private' => true,
+                'users' => [$user2->id], // Omit creator
                 'tags' => [],
             ]);
 

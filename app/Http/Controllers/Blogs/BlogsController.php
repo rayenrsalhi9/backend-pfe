@@ -194,15 +194,23 @@ class BlogsController extends Controller
 
         $user = Auth::user();
         $tags = $request->tags;
+        $picturePath = null;
 
         try {
 
-            DB::transaction(function () use ($request, $user, $tags) {
+            DB::transaction(function () use ($request, $user, $tags, &$picturePath) {
                 $blog = new Blogs();
                 $blog->title = $request->title;
                 $blog->subtitle = $request->subtitle;
                 $blog->body = $request->body;
-                $blog->picture = $request->filled('picture') ? $this->saveFile($request->picture) : '';
+                
+                if ($request->filled('picture')) {
+                    $picturePath = $this->saveFile($request->picture);
+                    $blog->picture = $picturePath;
+                } else {
+                    $blog->picture = '';
+                }
+
                 $isPrivate = $request->boolean('private');
                 $blog->privacy = $isPrivate ? 'private' : 'public';
                 $blog->created_by = $user->id;
@@ -239,6 +247,9 @@ class BlogsController extends Controller
 
             return response()->json($this->blogResponse, 200);
         } catch (\Throwable $th) {
+            if ($picturePath && file_exists(public_path($picturePath))) {
+                unlink(public_path($picturePath));
+            }
             return response($th->getMessage(), 500);
         }
     }
@@ -250,6 +261,7 @@ class BlogsController extends Controller
 
         $user = Auth::user();
         $tags = $request->tags;
+        $picturePath = null;
 
         try {
 
@@ -258,11 +270,18 @@ class BlogsController extends Controller
                 return response()->json(['message' => 'Not found'], 404);
             }
 
-            DB::transaction(function () use ($blog, $id, $request, $user, $tags) {
+            $this->authorize('update', $blog);
+
+            DB::transaction(function () use ($blog, $id, $request, $user, $tags, &$picturePath) {
                 $blog->title = $request->title;
                 $blog->subtitle = $request->subtitle;
                 $blog->body = $request->body;
-                $blog->picture = $request->filled('picture') ? $this->saveFile($request->picture) : $blog->picture;
+                
+                if ($request->filled('picture')) {
+                    $picturePath = $this->saveFile($request->picture);
+                    $blog->picture = $picturePath;
+                }
+
                 $blog->category_id = $request->category;
                 $blog->save();
 
@@ -287,16 +306,16 @@ class BlogsController extends Controller
                     }
                 }
 
-                if ($tags && count($tags) > 0) {
-
+                if ($request->has('tags')) {
                     Tags::where('blog_id', $blog->id)->delete();
-
-                    foreach ($tags as $key => $tag) {
-                        $blogTag = new Tags();
-                        $blogTag->blog_id = $blog->id;
-                        $blogTag->metatag = $tag['label'];
-                        $blogTag->created_by = $user->id;
-                        $blogTag->save();
+                    if ($tags && count($tags) > 0) {
+                        foreach ($tags as $key => $tag) {
+                            $blogTag = new Tags();
+                            $blogTag->blog_id = $blog->id;
+                            $blogTag->metatag = $tag['label'];
+                            $blogTag->created_by = $user->id;
+                            $blogTag->save();
+                        }
                     }
                 }
             });
@@ -307,6 +326,9 @@ class BlogsController extends Controller
 
             return response()->json($response, 200);
         } catch (\Throwable $th) {
+            if ($picturePath && file_exists(public_path($picturePath))) {
+                unlink(public_path($picturePath));
+            }
             return response($th->getMessage(), 500);
         }
     }

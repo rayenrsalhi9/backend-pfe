@@ -319,7 +319,7 @@ class AuthTest extends TestCase
         ]);
     }
 
-    public function test_reset_password_with_expired_token_returns_error()
+    public function test_reset_password_with_invalid_token_returns_error()
     {
         $user = Users::factory()->create([
             'email' => 'test@example.com',

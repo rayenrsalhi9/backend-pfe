@@ -6,6 +6,13 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     * 
+     * IMPORTANT: Put the application in maintenance mode or ensure no concurrent writes
+     * to documentAuditTrails occur before running this migration to prevent data inconsistency
+     * during foreign key removal and column modification.
+     */
     public function up()
     {
         $foreignKeys = DB::select("
@@ -61,9 +68,11 @@ return new class extends Migration
         ");
 
         if (!empty($orphanUsers)) {
-            $ids = implode(', ', array_column($orphanUsers, 'assignToUserId'));
+            $allIds = array_column($orphanUsers, 'assignToUserId');
+            $count = count($allIds);
+            $truncatedIds = implode(', ', array_slice($allIds, 0, 10));
             throw new RuntimeException(
-                "Cannot roll back: assignToUserId values $ids in documentAuditTrails " .
+                "Cannot roll back: $count orphan assignToUserId values (showing first 10): $truncatedIds in documentAuditTrails " .
                 "do not exist in users table. Fix data before rolling back."
             );
         }
@@ -77,13 +86,16 @@ return new class extends Migration
         ");
 
         if (!empty($orphanRoles)) {
-            $ids = implode(', ', array_column($orphanRoles, 'assignToRoleId'));
+            $allIds = array_column($orphanRoles, 'assignToRoleId');
+            $count = count($allIds);
+            $truncatedIds = implode(', ', array_slice($allIds, 0, 10));
             throw new RuntimeException(
-                "Cannot roll back: assignToRoleId values $ids in documentAuditTrails " .
+                "Cannot roll back: $count orphan assignToRoleId values (showing first 10): $truncatedIds in documentAuditTrails " .
                 "do not exist in roles table. Fix data before rolling back."
             );
         }
 
+        // MySQL implicitly commits before ALTER TABLE, so this transaction is best-effort and cannot fully roll back column type changes if foreign-key creation fails.
         DB::transaction(function () {
             $columns = DB::select("
                 SELECT COLUMN_NAME, COLUMN_TYPE

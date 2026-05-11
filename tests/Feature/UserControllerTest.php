@@ -58,7 +58,7 @@ class UserControllerTest extends TestCase
                 'phoneNumber' => '1234567890',
             ]);
 
-        $response->assertStatus(409);
+        $response->assertStatus(422);
     }
 
     public function test_create_user_with_existing_email_returns_error()
@@ -75,7 +75,7 @@ class UserControllerTest extends TestCase
                 'phoneNumber' => '1234567890',
             ]);
 
-        $response->assertStatus(409);
+        $response->assertStatus(422);
     }
 
     public function test_index_requires_USER_VIEW_USERS_claim()
@@ -86,6 +86,16 @@ class UserControllerTest extends TestCase
             ->getJson('/api/user');
 
         $response->assertStatus(200);
+    }
+
+    public function test_index_without_USER_VIEW_USERS_claim_is_rejected()
+    {
+        $user = Users::factory()->create();
+
+        $response = $this->actingAsUser($user, [])
+            ->getJson('/api/user');
+
+        $response->assertStatus(403);
     }
 
     public function test_submit_reset_password_with_weak_password_returns_validation_error()

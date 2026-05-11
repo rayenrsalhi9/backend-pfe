@@ -59,17 +59,17 @@ class UserController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json($validator->messages(), 409);
+            return response()->json($validator->messages(), 422);
         }
 
         if ($request->password) {
             $validator = Validator::make($request->all(), [
-                'password' => ['string', 'min:8', 'regex:/^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>~\-_=+\[\];\'\\\\\/])(?=.*[0-9]).{8,}$/'],
+                'password' => AuthController::passwordRules(false),
             ]);
             if ($validator->fails()) {
-                return response()->json($validator->messages(), 409);
+                return response()->json($validator->messages(), 422);
             }
-            $request['password'] = Hash::make($request->password);
+            $request->merge(['password' => Hash::make($request->password)]);
         }
         return  response()->json($this->userRepository->createUser($request->all()), 201);
     }
@@ -124,7 +124,7 @@ class UserController extends Controller
     {
         $request->validate([
             'email' => 'required|email|exists:users',
-            'password' => ['required', 'string', 'min:8', 'regex:/^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>~\-_=+\[\];\'\\\\\/])(?=.*[0-9]).{8,}$/']
+            'password' => AuthController::passwordRules()
         ]);
 
         $user = Users::where('email', $request->email)
@@ -137,7 +137,7 @@ class UserController extends Controller
     {
         $request->validate([
             'oldPassword' => 'required',
-            'newPassword' => ['required', 'string', 'min:8', 'regex:/^(?=.*[A-Z])(?=.*[!@#$%^&*(),.?":{}|<>~\-_=+\[\];\'\\\\\/])(?=.*[0-9]).{8,}$/'],
+            'newPassword' => AuthController::passwordRules(),
         ]);
 
         if (!(Hash::check($request->get('oldPassword'), Auth::user()->password))) {

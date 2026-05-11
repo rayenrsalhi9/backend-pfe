@@ -378,6 +378,17 @@ class BlogsTest extends TestCase
         $response->assertStatus(200);
     }
 
+    public function test_denies_dashboard_blogs_without_BLOG_VIEW_BLOGS_claim()
+    {
+        $user = Users::factory()->create();
+
+        // Acting as user with DASHBOARD_VIEW_DASHBOARD but WITHOUT BLOG_VIEW_BLOGS
+        $response = $this->actingAsUser($user, ['DASHBOARD_VIEW_DASHBOARD'])
+            ->getJson('/api/dashboard/blogs');
+
+        $response->assertStatus(403);
+    }
+
     /* ===========================================
      * Edge Cases
      * =========================================== */

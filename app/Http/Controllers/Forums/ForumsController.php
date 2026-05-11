@@ -15,6 +15,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class ForumsController extends Controller
 {
@@ -28,8 +29,6 @@ class ForumsController extends Controller
         $ttl = $this->getCacheTtl('forums');
 
         $forums = $this->cacheRemember($cacheKey, 'forums', $ttl, function () use ($request) {
-            $limit = $request->limit;
-            $banner = $request->banner;
             $user = Auth::user();
 
             $query = Forums::orderBy('created_at', 'DESC')
@@ -51,38 +50,9 @@ class ForumsController extends Controller
                                 });
                         });
                     }
-                })
-                ->when($limit, function ($query) use ($limit) {
-                    return $query->take($limit);
                 });
 
-            if ($request->has('banner')) {
-                $parsedBanner = filter_var($request->banner, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-                if ($parsedBanner !== null) {
-                    $query->where('banner', $parsedBanner);
-                }
-            }
-
-            if ($request->has('closed')) {
-                $bool = filter_var($request->closed, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-                if ($bool !== null) {
-                    $query->where('closed', $bool);
-                }
-            }
-
-            if ($request->title) {
-                $query->where('title', 'like', '%' . $request->title . '%');
-            }
-
-            if ($request->category) {
-                $query->where('category_id', $request->category);
-            }
-
-            if ($request->createdAt) {
-                $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
-                $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-                $query->whereBetween('created_at', [$startDate, $endDate]);
-            }
+            $this->applyForumFilters($query, $request);
 
             $forums = $query->get();
 
@@ -99,8 +69,6 @@ class ForumsController extends Controller
 
     function getAllForDashboard(Request $request)
     {
-        $limit = $request->limit;
-
         $query = Forums::orderBy('created_at', 'DESC')
             ->with(['creator' => function ($q) {
                 $q->select('users.id', 'users.firstName', 'users.lastName', 'users.userName', 'users.avatar', 'users.isDeleted')->withoutGlobalScope('isDeleted');
@@ -108,37 +76,7 @@ class ForumsController extends Controller
             ->with('category', 'allowedUsers')
             ->withCount(['reactions', 'comments']);
 
-        if ($request->has('banner')) {
-            $parsedBanner = filter_var($request->banner, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-            if ($parsedBanner !== null) {
-                $query->where('banner', $parsedBanner);
-            }
-        }
-
-        if ($request->has('closed')) {
-            $bool = filter_var($request->closed, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-            if ($bool !== null) {
-                $query->where('closed', $bool);
-            }
-        }
-
-        if ($request->title) {
-            $query->where('title', 'like', '%' . $request->title . '%');
-        }
-
-        if ($request->category) {
-            $query->where('category_id', $request->category);
-        }
-
-        if ($request->createdAt) {
-            $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
-            $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-            $query->whereBetween('created_at', [$startDate, $endDate]);
-        }
-
-        if ($limit) {
-            $query->take($limit);
-        }
+        $this->applyForumFilters($query, $request);
 
         $forums = $query->get();
 
@@ -175,16 +113,8 @@ class ForumsController extends Controller
 
         $user = Auth::user();
 
-        // Privacy check for private forums
-        if ($forum->privacy === 'private') {
-            if (!$user) {
-                return response()->json(['message' => 'Not found'], 404);
-            }
-            $isAllowed = $forum->allowedUsers()->where('user_id', $user->id)->exists();
-            $isCreator = $forum->created_by === $user->id;
-            if (!$isAllowed && !$isCreator) {
-                return response()->json(['message' => 'Not found'], 404);
-            }
+        if (!$this->userCanAccessForum($forum, Auth::user())) {
+            return response()->json(['message' => 'Not found'], 404);
         }
 
         $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
@@ -200,43 +130,45 @@ class ForumsController extends Controller
         $tags = is_array($rawTags) ? $rawTags : [];
 
         try {
-            $forum = new Forums();
-            $forum->title = $request->title;
-            $forum->content = $request->input('content');
-            $isPrivate = $request->boolean('private');
-            $forum->privacy = $isPrivate ? 'private' : 'public';
-            $forum->created_by = $user->id;
-            $forum->category_id = $request->category;
-            $forum->closed = false;
-            $forum->save();
+            DB::transaction(function () use ($request, $user, $tags, &$response) {
+                $forum = new Forums();
+                $forum->title = $request->title;
+                $forum->content = $request->input('content');
+                $isPrivate = $request->boolean('private');
+                $forum->privacy = $isPrivate ? 'private' : 'public';
+                $forum->created_by = $user->id;
+                $forum->category_id = $request->category;
+                $forum->closed = false;
+                $forum->save();
 
-            if ($isPrivate) {
-                $users = is_array($request->users) ? $request->users : [];
-                if (!in_array($user->id, $users)) {
-                    $users[] = $user->id;
-                }
-                foreach ($users as $userId) {
-                    $forumUser = new ForumUsers();
-                    $forumUser->forum_id = $forum->id;
-                    $forumUser->user_id = $userId;
-                    $forumUser->save();
-                }
-            }
-
-            if (!empty($tags)) {
-                foreach ($tags as $tag) {
-                    if (!isset($tag['label']) || !is_string($tag['label'])) {
-                        continue;
+                if ($isPrivate) {
+                    $users = is_array($request->users) ? $request->users : [];
+                    if (!in_array($user->id, $users)) {
+                        $users[] = $user->id;
                     }
-                    $forumTag = new Tags();
-                    $forumTag->forum_id = $forum->id;
-                    $forumTag->metatag = $tag['label'];
-                    $forumTag->created_by = $user->id;
-                    $forumTag->save();
+                    foreach ($users as $userId) {
+                        $forumUser = new ForumUsers();
+                        $forumUser->forum_id = $forum->id;
+                        $forumUser->user_id = $userId;
+                        $forumUser->save();
+                    }
                 }
-            }
 
-            $response = $forum->load('category', 'creator', 'tags', 'allowedUsers');
+                if (!empty($tags)) {
+                    foreach ($tags as $tag) {
+                        if (!isset($tag['label']) || !is_string($tag['label'])) {
+                            continue;
+                        }
+                        $forumTag = new Tags();
+                        $forumTag->forum_id = $forum->id;
+                        $forumTag->metatag = $tag['label'];
+                        $forumTag->created_by = $user->id;
+                        $forumTag->save();
+                    }
+                }
+
+                $response = $forum->load('category', 'creator', 'tags', 'allowedUsers');
+            });
 
             $this->flushCacheTag('forums');
 
@@ -257,51 +189,54 @@ class ForumsController extends Controller
             if (!$forum) {
                 return response()->json(['message' => 'Not found'], 404);
             }
-            $forum->title = $request->title;
-            $forum->content = $request->input('content');
-            $forum->category_id = $request->category;
-            $forum->closed = $request->closed;
-            $forum->save();
 
-            if ($request->has('private')) {
-                $isPrivate = $request->boolean('private');
-                $forum->privacy = $isPrivate ? 'private' : 'public';
+            DB::transaction(function () use ($forum, $id, $request, $user, $tags, &$response) {
+                $forum->title = $request->title;
+                $forum->content = $request->input('content');
+                $forum->category_id = $request->category;
+                $forum->closed = $request->closed;
                 $forum->save();
 
-                ForumUsers::where('forum_id', $forum->id)->delete();
+                if ($request->has('private')) {
+                    $isPrivate = $request->boolean('private');
+                    $forum->privacy = $isPrivate ? 'private' : 'public';
+                    $forum->save();
 
-                if ($isPrivate) {
-                    $users = is_array($request->users) ? $request->users : [];
-                    if (!in_array($user->id, $users)) {
-                        $users[] = $user->id;
-                    }
-                    foreach ($users as $userId) {
-                        $forumUser = new ForumUsers();
-                        $forumUser->forum_id = $forum->id;
-                        $forumUser->user_id = $userId;
-                        $forumUser->save();
-                    }
-                }
-            }
+                    ForumUsers::where('forum_id', $forum->id)->delete();
 
-            if ($tags !== null) {
-                Tags::where('forum_id', $forum->id)->delete();
-
-                if (!empty($tags)) {
-                    foreach ($tags as $tag) {
-                        if (!isset($tag['label']) || !is_string($tag['label'])) {
-                            continue;
+                    if ($isPrivate) {
+                        $users = is_array($request->users) ? $request->users : [];
+                        if (!in_array($user->id, $users)) {
+                            $users[] = $user->id;
                         }
-                        $forumTag = new Tags();
-                        $forumTag->forum_id = $forum->id;
-                        $forumTag->metatag = $tag['label'];
-                        $forumTag->created_by = $user->id;
-                        $forumTag->save();
+                        foreach ($users as $userId) {
+                            $forumUser = new ForumUsers();
+                            $forumUser->forum_id = $forum->id;
+                            $forumUser->user_id = $userId;
+                            $forumUser->save();
+                        }
                     }
                 }
-            }
 
-            $response = $forum->load('category', 'creator', 'tags', 'allowedUsers');
+                if ($tags !== null) {
+                    Tags::where('forum_id', $forum->id)->delete();
+
+                    if (!empty($tags)) {
+                        foreach ($tags as $tag) {
+                            if (!isset($tag['label']) || !is_string($tag['label'])) {
+                                continue;
+                            }
+                            $forumTag = new Tags();
+                            $forumTag->forum_id = $forum->id;
+                            $forumTag->metatag = $tag['label'];
+                            $forumTag->created_by = $user->id;
+                            $forumTag->save();
+                        }
+                    }
+                }
+
+                $response = $forum->load('category', 'creator', 'tags', 'allowedUsers');
+            });
 
             $this->flushCacheTag('forums');
 
@@ -335,15 +270,8 @@ class ForumsController extends Controller
         }
         $user = Auth::user();
 
-        if ($forum->privacy === 'private') {
-            if (!$user) {
-                return response()->json(['message' => 'Not found'], 404);
-            }
-            $isAllowed = $forum->allowedUsers()->where('user_id', $user->id)->exists();
-            $isCreator = $forum->created_by === $user->id;
-            if (!$isAllowed && !$isCreator) {
-                return response()->json(['message' => 'Not found'], 404);
-            }
+        if (!$this->userCanAccessForum($forum, Auth::user())) {
+            return response()->json(['message' => 'Not found'], 404);
         }
 
         $comment = new ForumComments();
@@ -393,15 +321,8 @@ class ForumsController extends Controller
         }
         $user = Auth::user();
 
-        if ($forum->privacy === 'private') {
-            if (!$user) {
-                return response()->json(['message' => 'Not found'], 404);
-            }
-            $isAllowed = $forum->allowedUsers()->where('user_id', $user->id)->exists();
-            $isCreator = $forum->created_by === $user->id;
-            if (!$isAllowed && !$isCreator) {
-                return response()->json(['message' => 'Not found'], 404);
-            }
+        if (!$this->userCanAccessForum($forum, Auth::user())) {
+            return response()->json(['message' => 'Not found'], 404);
         }
 
         $forumReaction = ForumReactions::where([
@@ -555,5 +476,57 @@ class ForumsController extends Controller
                 'message' => 'Failed to delete comment'
             ], 500);
         }
+    }
+    private function applyForumFilters($query, Request $request)
+    {
+        if ($request->has('banner')) {
+            $parsedBanner = filter_var($request->banner, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($parsedBanner !== null) {
+                $query->where('banner', $parsedBanner);
+            }
+        }
+
+        if ($request->has('closed')) {
+            $bool = filter_var($request->closed, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($bool !== null) {
+                $query->where('closed', $bool);
+            }
+        }
+
+        if ($request->title) {
+            $query->where('title', 'like', '%' . $request->title . '%');
+        }
+
+        if ($request->category) {
+            $query->where('category_id', $request->category);
+        }
+
+        if ($request->createdAt) {
+            $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+            $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+
+        if ($request->limit) {
+            $query->take($request->limit);
+        }
+
+        return $query;
+    }
+
+    private function userCanAccessForum(Forums $forum, $user): bool
+    {
+        if ($forum->privacy !== 'private') {
+            return true;
+        }
+
+        if (!$user) {
+            return false;
+        }
+
+        $isAllowed = $forum->allowedUsers()->where('user_id', $user->id)->exists();
+        $isCreator = $forum->created_by === $user->id;
+
+        return $isAllowed || $isCreator;
     }
 }
