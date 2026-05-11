@@ -2,23 +2,21 @@
 
 namespace App\Models;
 
-use App\Models\Users;
 use App\Traits\Uuids;
-use App\Models\ConversationMessage;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-
-
 
 class Conversation extends Model
 {
     use HasFactory, Notifiable, Uuids;
+
     protected $table = 'conversations';
 
     protected $fillable = [
         'id',
         'title',
+        'type',
         'created_at',
         'updated_at',
     ];
