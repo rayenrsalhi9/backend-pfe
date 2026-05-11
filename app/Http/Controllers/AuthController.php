@@ -133,51 +133,79 @@ class AuthController extends Controller
 
     public function refresh()
     {
-        $userId = Auth::parseToken()->getPayload()->get('userId');
-        $token = Auth::getToken();
-        $user = $this->userRepository->findUser($userId);
+        try {
+            $token = Auth::getToken();
+            if (!$token) {
+                return response()->json(['error' => 'Token not provided'], 401);
+            }
 
-        $userClaimsFromRole =  DB::table('userRoles')
-            ->select('roleClaims.claimType')
-            ->leftJoin('roles', 'roles.id', '=', 'userRoles.roleId')
-            ->leftJoin('roleClaims', 'roleClaims.roleId', '=', 'roles.id')
-            ->where('userRoles.userId', '=', $user->id)
-            ->get()
-            ->toArray();
+            // Decode JWT payload manually to support expired tokens
+            $parts = explode('.', $token->get());
+            if (count($parts) !== 3) {
+                return response()->json(['error' => 'Invalid token format'], 401);
+            }
+            $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
 
-        $userIndividualClaims = DB::table('userClaims')
-            ->select('claimType')
-            ->where('userClaims.userId', '=', $user->id)
-            ->get()
-            ->toArray();
+            if (!$payload || !isset($payload['userId'])) {
+                return response()->json(['error' => 'Invalid token payload'], 401);
+            }
 
-        $allClaimsObjArray = array_merge($userClaimsFromRole, $userIndividualClaims);
+            $userId = $payload['userId'];
+            $user = $this->userRepository->findUser($userId);
 
-        $userClaims = array_map(function ($value) {
-            return $value->claimType;
-        }, $allClaimsObjArray);
+            if (!$user) {
+                return response()->json(['error' => 'User not found'], 401);
+            }
 
-        $user->claims = $userClaims;
+            $userClaimsFromRole =  DB::table('userRoles')
+                ->select('roleClaims.claimType')
+                ->leftJoin('roles', 'roles.id', '=', 'userRoles.roleId')
+                ->leftJoin('roleClaims', 'roleClaims.roleId', '=', 'roles.id')
+                ->where('userRoles.userId', '=', $user->id)
+                ->get()
+                ->toArray();
 
-        $token = Auth::claims(array('claims' => $userClaims, 'email' => $user->email, 'userId' => $user->id))->refresh($token);
+            $userIndividualClaims = DB::table('userClaims')
+                ->select('claimType')
+                ->where('userClaims.userId', '=', $user->id)
+                ->get()
+                ->toArray();
 
-        return response()->json([
-            'status' => 'success',
-            'claims' => $userClaims,
-            'user' => [
-                'id' => $user->id,
-                'firstName' =>  $user->firstName,
-                'lastName' => $user->lastName,
-                'email' => $user->email,
-                'userName' => $user->userName,
-                'phoneNumber' => $user->phoneNumber,
-                'avatar' => $user->avatar
-            ],
-            'authorisation' => [
-                'token' => $token,
-                'type' => 'bearer',
-            ]
-        ]);
+            $allClaimsObjArray = array_merge($userClaimsFromRole, $userIndividualClaims);
+
+            $userClaims = array_map(function ($value) {
+                return $value->claimType;
+            }, $allClaimsObjArray);
+
+            $user->claims = $userClaims;
+
+            $token = Auth::claims(array('claims' => $userClaims, 'email' => $user->email, 'userId' => $user->id))->refresh($token);
+
+            return response()->json([
+                'status' => 'success',
+                'claims' => $userClaims,
+                'user' => [
+                    'id' => $user->id,
+                    'firstName' =>  $user->firstName,
+                    'lastName' => $user->lastName,
+                    'email' => $user->email,
+                    'userName' => $user->userName,
+                    'phoneNumber' => $user->phoneNumber,
+                    'avatar' => $user->avatar
+                ],
+                'authorisation' => [
+                    'token' => $token,
+                    'type' => 'bearer',
+                ]
+            ]);
+
+        } catch (\PHPOpenSourceSaver\JWTAuth\Exceptions\TokenExpiredException $e) {
+            return response()->json(['error' => 'Token expired and cannot be refreshed'], 401);
+        } catch (\PHPOpenSourceSaver\JWTAuth\Exceptions\TokenBlacklistedException $e) {
+            return response()->json(['error' => 'Token has been revoked'], 401);
+        } catch (\PHPOpenSourceSaver\JWTAuth\Exceptions\JWTException $e) {
+            return response()->json(['error' => 'Invalid token'], 401);
+        }
     }
 
     public function testToken()

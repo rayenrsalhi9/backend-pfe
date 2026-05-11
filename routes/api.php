@@ -61,12 +61,12 @@ Route::get('document/{id}/office-viewer', [DocumentController::class, 'officevie
 Route::get('document/{id}/officeviewer', [DocumentController::class, 'officeviewer']);
 Route::get('/company-profile', [CompanyProfileController::class, 'getCompanyProfile']);
 
+Route::post('auth/refresh', [AuthController::class, 'refresh']);
+
 Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::post('/company-profile', [CompanyProfileController::class, 'updateCompanyProfile'])
         ->middleware('can:updateCompanyProfile');
-
-    Route::post('auth/refresh', [AuthController::class, 'refresh']);
 
     Route::post('pusher/auth', function (Request $request) {
 
