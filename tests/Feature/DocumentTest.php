@@ -88,7 +88,6 @@ class DocumentTest extends TestCase
             'documentId' => $docId,
             'userId' => $user->id,
             'isAllowDownload' => 1,
-            'isTimeBound' => 0,
             'createdBy' => $user->id,
             'modifiedBy' => $user->id,
             'createdDate' => now(),
@@ -113,48 +112,6 @@ class DocumentTest extends TestCase
 
         $response->assertStatus(200);
         $this->assertEquals(0, $response->json()[0]['isAllowDownload']);
-    }
-
-    public function test_get_documents_returns_isAllowDownload_true_for_role_permission()
-    {
-        $user = Users::factory()->create();
-        $categoryId = $this->createCategory($user->id);
-        $docId = $this->createDocument($user->id, $categoryId);
-
-        $roleId = Uuid::uuid4()->toString();
-        DB::table('roles')->insert([
-            'id' => $roleId,
-            'name' => 'Test Role',
-            'createdBy' => $user->id,
-            'modifiedBy' => $user->id,
-            'createdDate' => now(),
-            'modifiedDate' => now(),
-            'isDeleted' => 0,
-        ]);
-
-        DB::table('userRoles')->insert([
-            'id' => Uuid::uuid4()->toString(),
-            'userId' => $user->id,
-            'roleId' => $roleId,
-        ]);
-
-        DB::table('documentRolePermissions')->insert([
-            'id' => Uuid::uuid4()->toString(),
-            'documentId' => $docId,
-            'roleId' => $roleId,
-            'isAllowDownload' => 1,
-            'isTimeBound' => 0,
-            'createdBy' => $user->id,
-            'modifiedBy' => $user->id,
-            'createdDate' => now(),
-            'modifiedDate' => now(),
-        ]);
-
-        $response = $this->actingAsUser($user, ['ALL_DOCUMENTS_VIEW_DOCUMENTS'])
-            ->getJson('/api/documents?orderBy=createdDate desc&pageSize=10&skip=0&fields=&createDateString=&searchQuery=&categoryId=&name=&metaTags=&id=');
-
-        $response->assertStatus(200);
-        $this->assertEquals(1, $response->json()[0]['isAllowDownload']);
     }
 
     /* ============================================
@@ -248,7 +205,6 @@ class DocumentTest extends TestCase
             'documentId' => $docId,
             'userId' => $user2->id,
             'isAllowDownload' => 1,
-            'isTimeBound' => 0,
             'createdBy' => $user->id,
             'modifiedBy' => $user->id,
             'createdDate' => now(),
@@ -263,7 +219,7 @@ class DocumentTest extends TestCase
                 'categoryId' => $categoryId,
                 'documentMetaDatas' => [],
                 'documentUserPermissions' => [
-                    ['userId' => $user3->id, 'isAllowDownload' => 1, 'isTimeBound' => false],
+                    ['userId' => $user3->id, 'isAllowDownload' => 1],
                 ],
             ]);
 
@@ -277,45 +233,22 @@ class DocumentTest extends TestCase
         ]);
     }
 
-    public function test_update_document_replaces_role_permissions()
+    public function test_update_document_clears_all_user_permissions_when_empty_array()
     {
         $user = Users::factory()->create();
         $categoryId = $this->createCategory($user->id);
         $docId = $this->createDocument($user->id, $categoryId);
 
-        $roleId = Uuid::uuid4()->toString();
-        DB::table('roles')->insert([
-            'id' => $roleId,
-            'name' => 'Old Role',
-            'createdBy' => $user->id,
-            'modifiedBy' => $user->id,
-            'createdDate' => now(),
-            'modifiedDate' => now(),
-            'isDeleted' => 0,
-        ]);
-
         $oldPermId = Uuid::uuid4()->toString();
-        DB::table('documentRolePermissions')->insert([
+        DB::table('documentUserPermissions')->insert([
             'id' => $oldPermId,
             'documentId' => $docId,
-            'roleId' => $roleId,
-            'isAllowDownload' => 0,
-            'isTimeBound' => 0,
+            'userId' => $user->id,
+            'isAllowDownload' => 1,
             'createdBy' => $user->id,
             'modifiedBy' => $user->id,
             'createdDate' => now(),
             'modifiedDate' => now(),
-        ]);
-
-        $newRoleId = Uuid::uuid4()->toString();
-        DB::table('roles')->insert([
-            'id' => $newRoleId,
-            'name' => 'New Role',
-            'createdBy' => $user->id,
-            'modifiedBy' => $user->id,
-            'createdDate' => now(),
-            'modifiedDate' => now(),
-            'isDeleted' => 0,
         ]);
 
         $response = $this->actingAsUser($user, ['ALL_DOCUMENTS_EDIT_DOCUMENT'])
@@ -324,19 +257,12 @@ class DocumentTest extends TestCase
                 'description' => 'Updated desc',
                 'categoryId' => $categoryId,
                 'documentMetaDatas' => [],
-                'documentRolePermissions' => [
-                    ['roleId' => $newRoleId, 'isAllowDownload' => 1, 'isTimeBound' => false],
-                ],
+                'documentUserPermissions' => [],
             ]);
 
         $response->assertStatus(200);
 
-        $this->assertDatabaseMissing('documentRolePermissions', ['id' => $oldPermId]);
-        $this->assertDatabaseHas('documentRolePermissions', [
-            'documentId' => $docId,
-            'roleId' => $newRoleId,
-            'isAllowDownload' => 1,
-        ]);
+        $this->assertDatabaseMissing('documentUserPermissions', ['id' => $oldPermId]);
     }
 
     /* ============================================
@@ -367,7 +293,7 @@ class DocumentTest extends TestCase
                 'categoryId' => $categoryId,
                 'documentMetaDatas' => [],
                 'documentUserPermissions' => [
-                    ['userId' => $user3->id, 'isAllowDownload' => 1, 'isTimeBound' => false],
+                    ['userId' => $user3->id, 'isAllowDownload' => 1],
                 ],
             ]);
 
@@ -387,7 +313,7 @@ class DocumentTest extends TestCase
      * PUT /document/{id} - audit trails
      * ============================================ */
 
-    public function test_update_document_creates_audit_trails_for_role_and_user_assignments()
+    public function test_update_document_creates_audit_trails_for_user_assignments()
     {
         $user = Users::factory()->create();
         $user2 = Users::factory()->create();
@@ -395,49 +321,20 @@ class DocumentTest extends TestCase
         $categoryId = $this->createCategory($user->id);
         $docId = $this->createDocument($user->id, $categoryId);
 
-        $roleId = Uuid::uuid4()->toString();
-        DB::table('roles')->insert([
-            'id' => $roleId,
-            'name' => 'Test Role',
-            'createdBy' => $user->id,
-            'modifiedBy' => $user->id,
-            'createdDate' => now(),
-            'modifiedDate' => now(),
-            'isDeleted' => 0,
-        ]);
-        $roleId2 = Uuid::uuid4()->toString();
-        DB::table('roles')->insert([
-            'id' => $roleId2,
-            'name' => 'Test Role 2',
-            'createdBy' => $user->id,
-            'modifiedBy' => $user->id,
-            'createdDate' => now(),
-            'modifiedDate' => now(),
-            'isDeleted' => 0,
-        ]);
-
         $response = $this->actingAsUser($user, ['ALL_DOCUMENTS_EDIT_DOCUMENT'])
             ->putJson("/api/document/{$docId}", [
                 'name' => 'Updated',
                 'description' => 'Updated desc',
                 'categoryId' => $categoryId,
                 'documentMetaDatas' => [],
-                'documentRolePermissions' => [
-                    ['roleId' => $roleId, 'isAllowDownload' => 1, 'isTimeBound' => false],
-                    ['roleId' => $roleId2, 'isAllowDownload' => 1, 'isTimeBound' => false],
-                ],
                 'documentUserPermissions' => [
-                    ['userId' => $user2->id, 'isAllowDownload' => 0, 'isTimeBound' => false],
-                    ['userId' => $user3->id, 'isAllowDownload' => 0, 'isTimeBound' => false],
+                    ['userId' => $user2->id, 'isAllowDownload' => 0],
+                    ['userId' => $user3->id, 'isAllowDownload' => 0],
                 ],
             ]);
 
         $response->assertStatus(200);
 
-        $this->assertDatabaseHas('documentAuditTrails', [
-            'documentId' => $docId,
-            'assignToRoleId' => "$roleId,$roleId2",
-        ]);
         $this->assertDatabaseHas('documentAuditTrails', [
             'documentId' => $docId,
             'assignToUserId' => "$user2->id,$user3->id",
@@ -486,7 +383,6 @@ class DocumentTest extends TestCase
             'documentId' => $docId,
             'userId' => $user->id,
             'isAllowDownload' => 1,
-            'isTimeBound' => 0,
             'createdBy' => $user->id,
             'modifiedBy' => $user->id,
             'createdDate' => now(),
@@ -516,7 +412,6 @@ class DocumentTest extends TestCase
             'documentId' => $docId,
             'userId' => $user->id,
             'isAllowDownload' => 0,
-            'isTimeBound' => 0,
             'createdBy' => $user->id,
             'modifiedBy' => $user->id,
             'createdDate' => now(),

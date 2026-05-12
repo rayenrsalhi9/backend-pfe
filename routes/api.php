@@ -277,23 +277,11 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
     });
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::post('/document-role-permission', [DocumentPermissionController::class, 'addDocumentRolePermission']);
-    });
-
-    Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
         Route::post('/document-user-permission', [DocumentPermissionController::class, 'addDocumentUserPermission']);
     });
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::post('/document-role-permission/multiple', [DocumentPermissionController::class, 'multipleDocumentsToUsersAndRoles']);
-    });
-
-    Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
         Route::delete('/document-user-permission/{id}', [DocumentPermissionController::class, 'deleteDocumentUserPermission']);
-    });
-
-    Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::delete('/document-role-permission/{id}', [DocumentPermissionController::class, 'deleteDocumentRolePermission']);
     });
 
     Route::get('/document/{id}/is-download-flag/is-permission/{isPermission}', [DocumentPermissionController::class, 'getIsDownloadFlag']);
