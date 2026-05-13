@@ -67,18 +67,18 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
             foreach ($uniquePermissions as $documentUser) {
                 $documentId = $documentUser['documentId'];
 
-                $model = DocumentUserPermissions::firstOrCreate(
+                $model = DocumentUserPermissions::updateOrCreate(
                     ['documentId' => $documentId, 'userId' => $documentUser['userId']],
                     ['isAllowDownload' => $documentUser['isAllowDownload']]
                 );
 
                 $createdModels[] = $model;
 
-                if (! in_array($documentUser['userId'], $permissionsByDocument[$documentId] ?? [])) {
-                    $permissionsByDocument[$documentId][] = $documentUser['userId'];
-                }
+                if ($model->wasRecentlyCreated || $model->wasChanged('isAllowDownload')) {
+                    if (! in_array($documentUser['userId'], $permissionsByDocument[$documentId] ?? [])) {
+                        $permissionsByDocument[$documentId][] = $documentUser['userId'];
+                    }
 
-                if ($model->wasRecentlyCreated) {
                     UserNotifications::create([
                         'documentId' => $documentId,
                         'userId' => $documentUser['userId'],

@@ -262,7 +262,7 @@ class BlogsController extends Controller
                 unlink(public_path($picturePath));
             }
 
-            return response($th->getMessage(), 500);
+            return response('Update failed', 500);
         }
     }
 
@@ -274,15 +274,16 @@ class BlogsController extends Controller
         $user = Auth::user();
         $tags = $request->tags;
         $picturePath = null;
+        $oldPicture = null;
+
+        $blog = Blogs::where('id', $id)->first();
+        if (! $blog) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        $this->authorize('update', $blog);
 
         try {
-
-            $blog = Blogs::where('id', $id)->first();
-            if (! $blog) {
-                return response()->json(['message' => 'Not found'], 404);
-            }
-
-            $this->authorize('update', $blog);
 
             DB::transaction(function () use ($blog, $id, $request, $user, $tags, &$picturePath) {
                 $blog->title = $request->title;
@@ -290,6 +291,7 @@ class BlogsController extends Controller
                 $blog->body = $request->body;
 
                 if ($request->filled('picture')) {
+                    $oldPicture = $blog->picture;
                     $picturePath = $this->saveFile($request->picture);
                     $blog->picture = $picturePath;
                 }
@@ -337,6 +339,10 @@ class BlogsController extends Controller
                 }
             });
 
+            if ($oldPicture && file_exists(public_path($oldPicture))) {
+                unlink(public_path($oldPicture));
+            }
+
             $response = $blog->load('category', 'creator', 'tags', 'allowedUsers');
 
             $this->flushCacheTag('blogs');
@@ -347,7 +353,7 @@ class BlogsController extends Controller
                 unlink(public_path($picturePath));
             }
 
-            return response($th->getMessage(), 500);
+            return response('Update failed', 500);
         }
     }
 

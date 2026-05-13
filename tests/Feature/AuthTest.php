@@ -451,7 +451,7 @@ class AuthTest extends TestCase
         ]);
 
         $token = $this->getAuthToken($user);
-        $response = $this->withHeader('Authorization', "Bearer {$token}")
+        $response = $this->actingAsUser($user)
             ->postJson('/api/auth/refresh');
 
         $response->assertStatus(200);
@@ -505,6 +505,30 @@ class AuthTest extends TestCase
         $newToken = $response->json('authorisation.token');
         $this->assertNotNull($newToken);
         $this->assertNotEquals($token, $newToken);
+    }
+
+    public function test_refresh_rejects_token_present_in_custom_jwt_blacklist()
+    {
+        $user = Users::factory()->create([
+            'email' => 'customblacklist@example.com',
+            'password' => bcrypt('Test@1234'),
+            'userName' => 'customblacklistuser',
+        ]);
+
+        $token = $this->getAuthToken($user);
+
+        DB::table('jwt_blacklist')->insert([
+            'token_hash' => hash('sha256', $token),
+            'expires_at' => now()->addMinutes(config('jwt.ttl', 60)),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/auth/refresh');
+
+        $response->assertStatus(401);
+        $response->assertJson(['error' => 'Token has been revoked']);
     }
 
     public function test_refresh_blacklisted_token_returns_401()

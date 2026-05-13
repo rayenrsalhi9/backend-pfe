@@ -124,12 +124,14 @@ class AuthController extends Controller
 
             if ($token) {
                 // Add token to blacklist
-                DB::table('jwt_blacklist')->insert([
-                    'token_hash' => hash('sha256', $token->get()),
-                    'expires_at' => now()->addMinutes(config('jwt.ttl', 60)),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                DB::table('jwt_blacklist')->updateOrInsert(
+                    ['token_hash' => hash('sha256', $token->get())],
+                    [
+                        'expires_at' => now()->addMinutes(config('jwt.ttl', 60)),
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
             }
 
             // Update user connection status
@@ -172,13 +174,6 @@ class AuthController extends Controller
                 return response()->json(['error' => 'Token has been revoked'], 401);
             }
 
-            DB::table('jwt_blacklist')->insert([
-                'token_hash' => $tokenHash,
-                'expires_at' => now()->addMinutes(config('jwt.ttl', 60)),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-
             $user = $this->userRepository->findUser($userId);
 
             if (! $user) {
@@ -208,6 +203,13 @@ class AuthController extends Controller
             $user->claims = $userClaims;
 
             $token = JWTAuth::claims(['claims' => $userClaims, 'email' => $user->email, 'userId' => $user->id])->refresh();
+
+            DB::table('jwt_blacklist')->insert([
+                'token_hash' => $tokenHash,
+                'expires_at' => now()->addMinutes(config('jwt.ttl', 60)),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
 
             return response()->json([
                 'status' => 'success',
