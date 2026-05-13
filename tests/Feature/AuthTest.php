@@ -3,13 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Users;
-use App\Models\LoginAudit;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
-use Tests\TestCase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Carbon\Carbon;
+use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
+use Tests\TestCase;
 
 class AuthTest extends TestCase
 {
@@ -20,13 +19,14 @@ class AuthTest extends TestCase
         return JWTAuth::claims([
             'claims' => $claims,
             'userId' => $user->id,
-            'email' => $user->email
+            'email' => $user->email,
         ])->fromUser($user);
     }
 
     protected function actingAsUser(Users $user, array $claims = [])
     {
         $token = $this->getAuthToken($user, $claims);
+
         return $this->withHeader('Authorization', "Bearer {$token}");
     }
 
@@ -484,6 +484,14 @@ class AuthTest extends TestCase
         // Move clock past token TTL so the token is now expired
         $ttl = config('jwt.ttl', 60);
         Carbon::setTestNow(Carbon::now()->addMinutes($ttl + 1));
+
+        // Assert the token is actually expired
+        try {
+            JWTAuth::setToken($token)->authenticate();
+            $this->fail('Token should have expired');
+        } catch (\PHPOpenSourceSaver\JWTAuth\Exceptions\TokenExpiredException $e) {
+            $this->assertTrue(true);
+        }
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/auth/refresh');

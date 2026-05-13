@@ -2,26 +2,26 @@
 
 namespace App\Http\Controllers\Blogs;
 
-use App\Models\Blogs;
-use Ramsey\Uuid\Uuid;
-use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\HasPermissionTrait;
-use App\Traits\CacheableTrait;
 use App\Models\BlogComments;
 use App\Models\BlogReactions;
-use App\Models\Tags;
+use App\Models\Blogs;
 use App\Models\BlogUsers;
 use App\Models\ResponseAuditTrails;
+use App\Models\Tags;
+use App\Traits\CacheableTrait;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Ramsey\Uuid\Uuid;
 
 class BlogsController extends Controller
 {
-    use HasPermissionTrait;
     use CacheableTrait;
+    use HasPermissionTrait;
 
     private function saveFile($image_64)
     {
@@ -35,18 +35,19 @@ class BlogsController extends Controller
 
             $image = str_replace(' ', '+', $image);
 
-            $destinationPath = public_path() . '/images//';
+            $destinationPath = public_path().'/images//';
 
-            $imageName = Uuid::uuid4() . '.' . $extension;
+            $imageName = Uuid::uuid4().'.'.$extension;
 
-            file_put_contents($destinationPath . $imageName, base64_decode($image));
-            return 'images/' . $imageName;
+            file_put_contents($destinationPath.$imageName, base64_decode($image));
+
+            return 'images/'.$imageName;
         } catch (\Exception $e) {
             return '';
         }
     }
 
-    function getAll(Request $request)
+    public function getAll(Request $request)
     {
         $viewer = Auth::id() ?? 'guest';
         $cacheKey = $this->getCacheKey('blogs', 'list', $this->normalizeRequestParams($request->all()), $viewer);
@@ -83,8 +84,8 @@ class BlogsController extends Controller
 
             if ($request->title) {
                 $query->where(function ($q) use ($request) {
-                    $q->where('title', 'like', '%' . $request->title . '%')
-                        ->orWhere('subtitle', 'like', '%' . $request->title . '%');
+                    $q->where('title', 'like', '%'.$request->title.'%')
+                        ->orWhere('subtitle', 'like', '%'.$request->title.'%');
                 });
             }
 
@@ -97,7 +98,8 @@ class BlogsController extends Controller
                     $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
                     $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
                     $query->whereBetween('created_at', [$startDate, $endDate]);
-                } catch (\Exception $e) {}
+                } catch (\Exception $e) {
+                }
             }
 
             $blog = $query->get();
@@ -113,7 +115,7 @@ class BlogsController extends Controller
         return response()->json($blog, 200);
     }
 
-    function getAllForDashboard(Request $request)
+    public function getAllForDashboard(Request $request)
     {
         $limit = $request->limit;
 
@@ -123,8 +125,8 @@ class BlogsController extends Controller
 
         if ($request->title) {
             $query->where(function ($q) use ($request) {
-                $q->where('title', 'like', '%' . $request->title . '%')
-                    ->orWhere('subtitle', 'like', '%' . $request->title . '%');
+                $q->where('title', 'like', '%'.$request->title.'%')
+                    ->orWhere('subtitle', 'like', '%'.$request->title.'%');
             });
         }
 
@@ -137,7 +139,8 @@ class BlogsController extends Controller
                 $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
                 $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
                 $query->whereBetween('created_at', [$startDate, $endDate]);
-            } catch (\Exception $e) {}
+            } catch (\Exception $e) {
+            }
         }
 
         if ($limit) {
@@ -154,7 +157,7 @@ class BlogsController extends Controller
         return response()->json($blogs, 200);
     }
 
-    function getOne($id)
+    public function getOne($id)
     {
         $cacheKey = $this->getCacheKey('blogs', 'item', $id);
         $ttl = $this->getCacheTtl('blogs');
@@ -166,7 +169,7 @@ class BlogsController extends Controller
                 ->first();
         });
 
-        if (!$blog) {
+        if (! $blog) {
             return response()->json(['message' => 'Not found'], 404);
         }
 
@@ -174,12 +177,12 @@ class BlogsController extends Controller
 
         // Privacy check for private blogs
         if ($blog->privacy === 'private') {
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['message' => 'Not found'], 404);
             }
             $isAllowed = $blog->allowedUsers()->where('user_id', $user->id)->exists();
             $isCreator = $blog->created_by === $user->id;
-            if (!$isAllowed && !$isCreator) {
+            if (! $isAllowed && ! $isCreator) {
                 return response()->json(['message' => 'Not found'], 404);
             }
         }
@@ -192,7 +195,7 @@ class BlogsController extends Controller
         return response()->json($blog, 200);
     }
 
-    function create(Request $request)
+    public function create(Request $request)
     {
 
         $user = Auth::user();
@@ -202,11 +205,11 @@ class BlogsController extends Controller
         try {
 
             DB::transaction(function () use ($request, $user, $tags, &$picturePath) {
-                $blog = new Blogs();
+                $blog = new Blogs;
                 $blog->title = $request->title;
                 $blog->subtitle = $request->subtitle;
                 $blog->body = $request->body;
-                
+
                 if ($request->filled('picture')) {
                     $picturePath = $this->saveFile($request->picture);
                     $blog->picture = $picturePath;
@@ -222,11 +225,12 @@ class BlogsController extends Controller
 
                 if ($isPrivate) {
                     $users = is_array($request->users) ? $request->users : [];
-                    if (!in_array($user->id, $users)) {
+                    if (! in_array($user->id, $users)) {
                         $users[] = $user->id;
                     }
+                    $users = array_values(array_unique($users));
                     foreach ($users as $userId) {
-                        $blogUser = new BlogUsers();
+                        $blogUser = new BlogUsers;
                         $blogUser->blog_id = $blog->id;
                         $blogUser->user_id = $userId;
                         $blogUser->save();
@@ -236,8 +240,10 @@ class BlogsController extends Controller
                 if ($tags && count($tags) > 0) {
                     foreach ($tags as $tag) {
                         $label = is_string($tag) ? $tag : (isset($tag['label']) && is_string($tag['label']) && $tag['label'] !== '' ? $tag['label'] : null);
-                        if (!$label) continue;
-                        $blogTag = new Tags();
+                        if (! $label) {
+                            continue;
+                        }
+                        $blogTag = new Tags;
                         $blogTag->blog_id = $blog->id;
                         $blogTag->metatag = $label;
                         $blogTag->created_by = $user->id;
@@ -255,13 +261,14 @@ class BlogsController extends Controller
             if ($picturePath && file_exists(public_path($picturePath))) {
                 unlink(public_path($picturePath));
             }
+
             return response($th->getMessage(), 500);
         }
     }
 
     private $blogResponse;
 
-    function update($id, Request $request)
+    public function update($id, Request $request)
     {
 
         $user = Auth::user();
@@ -271,7 +278,7 @@ class BlogsController extends Controller
         try {
 
             $blog = Blogs::where('id', $id)->first();
-            if (!$blog) {
+            if (! $blog) {
                 return response()->json(['message' => 'Not found'], 404);
             }
 
@@ -281,7 +288,7 @@ class BlogsController extends Controller
                 $blog->title = $request->title;
                 $blog->subtitle = $request->subtitle;
                 $blog->body = $request->body;
-                
+
                 if ($request->filled('picture')) {
                     $picturePath = $this->saveFile($request->picture);
                     $blog->picture = $picturePath;
@@ -299,11 +306,12 @@ class BlogsController extends Controller
 
                     if ($isPrivate) {
                         $users = is_array($request->users) ? $request->users : [];
-                        if (!in_array($user->id, $users)) {
+                        if (! in_array($user->id, $users)) {
                             $users[] = $user->id;
                         }
+                        $users = array_values(array_unique($users));
                         foreach ($users as $userId) {
-                            $blogUser = new BlogUsers();
+                            $blogUser = new BlogUsers;
                             $blogUser->blog_id = $blog->id;
                             $blogUser->user_id = $userId;
                             $blogUser->save();
@@ -316,8 +324,10 @@ class BlogsController extends Controller
                     if ($tags && count($tags) > 0) {
                         foreach ($tags as $key => $tag) {
                             $label = is_string($tag) ? $tag : (isset($tag['label']) && is_string($tag['label']) && $tag['label'] !== '' ? $tag['label'] : null);
-                            if (!$label) continue;
-                            $blogTag = new Tags();
+                            if (! $label) {
+                                continue;
+                            }
+                            $blogTag = new Tags;
                             $blogTag->blog_id = $blog->id;
                             $blogTag->metatag = $label;
                             $blogTag->created_by = $user->id;
@@ -336,14 +346,17 @@ class BlogsController extends Controller
             if ($picturePath && file_exists(public_path($picturePath))) {
                 unlink(public_path($picturePath));
             }
+
             return response($th->getMessage(), 500);
         }
     }
 
-    function delete($id)
+    public function delete($id)
     {
         $category = Blogs::where('id', $id)->first();
-        if (!$category) return response()->json(['message' => 'Not found'], 404);
+        if (! $category) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
         $this->authorize('delete', $category);
         $category->delete();
 
@@ -352,27 +365,27 @@ class BlogsController extends Controller
         return response()->json('successfully deleted', 200);
     }
 
-    function addComment($id, Request $request)
+    public function addComment($id, Request $request)
     {
 
         $blog = Blogs::where('id', $id)->first();
-        if (!$blog) {
+        if (! $blog) {
             return response()->json(['message' => 'Not found'], 404);
         }
         $user = Auth::user();
 
         if ($blog->privacy === 'private') {
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['message' => 'Not found'], 404);
             }
             $isAllowed = $blog->allowedUsers()->where('user_id', $user->id)->exists();
             $isCreator = $blog->created_by === $user->id;
-            if (!$isAllowed && !$isCreator) {
+            if (! $isAllowed && ! $isCreator) {
                 return response()->json(['message' => 'Not found'], 404);
             }
         }
 
-        $comment = new BlogComments();
+        $comment = new BlogComments;
         $comment->blog_id = $blog->id;
         $comment->user_id = $user->id;
         $comment->comment = $request->comment;
@@ -385,29 +398,29 @@ class BlogsController extends Controller
         return response()->json($response, 200);
     }
 
-    function addReaction($id, Request $request)
+    public function addReaction($id, Request $request)
     {
 
         $blog = Blogs::where('id', $id)->first();
-        if (!$blog) {
+        if (! $blog) {
             return response()->json(['message' => 'Not found'], 404);
         }
         $user = Auth::user();
 
         if ($blog->privacy === 'private') {
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['message' => 'Not found'], 404);
             }
             $isAllowed = $blog->allowedUsers()->where('user_id', $user->id)->exists();
             $isCreator = $blog->created_by === $user->id;
-            if (!$isAllowed && !$isCreator) {
+            if (! $isAllowed && ! $isCreator) {
                 return response()->json(['message' => 'Not found'], 404);
             }
         }
 
         $blogReaction = BlogReactions::where([
             'blog_id' => $blog->id,
-            'user_id' => $user->id
+            'user_id' => $user->id,
         ])->first();
 
         if ($blogReaction) {
@@ -421,7 +434,7 @@ class BlogsController extends Controller
                 $blogReaction->save();
             }
         } else {
-            $reaction = new BlogReactions();
+            $reaction = new BlogReactions;
             $reaction->blog_id = $blog->id;
             $reaction->user_id = $user->id;
             $reaction->type = $request->type;
@@ -435,13 +448,13 @@ class BlogsController extends Controller
         return response()->json($response, 200);
     }
 
-    function deleteComment($commentId, Request $request)
+    public function deleteComment($commentId, Request $request)
     {
         $user = Auth::user();
 
         $request->merge(['commentId' => $commentId]);
         $request->validate([
-            'commentId' => 'required|uuid'
+            'commentId' => 'required|uuid',
         ]);
 
         try {
@@ -451,17 +464,17 @@ class BlogsController extends Controller
             $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
             $isOwner = $comment && $comment->user_id === $user->id;
 
-            if (!$canDelete && !$isOwner) {
+            if (! $canDelete && ! $isOwner) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'You do not have permission to delete comments.'
+                    'message' => 'You do not have permission to delete comments.',
                 ], 403);
             }
 
-            if (!$comment) {
+            if (! $comment) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Comment not found'
+                    'message' => 'Comment not found',
                 ], 404);
             }
 
@@ -474,7 +487,7 @@ class BlogsController extends Controller
 
             // audit trail
             try {
-                $audit = new ResponseAuditTrails();
+                $audit = new ResponseAuditTrails;
                 $audit->blogId = $blogId;
                 $audit->responseId = $commentId;
                 $audit->responseType = 'comment';
@@ -485,18 +498,19 @@ class BlogsController extends Controller
                 $audit->createdBy = $user->id;
                 $audit->save();
             } catch (\Throwable $th) {
-                Log::error('Audit trail creation failed: ' . $th->getMessage());
+                Log::error('Audit trail creation failed: '.$th->getMessage());
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Comment deleted successfully'
+                'message' => 'Comment deleted successfully',
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Comment deletion failed: ' . $e->getMessage());
+            Log::error('Comment deletion failed: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to delete comment'
+                'message' => 'Failed to delete comment',
             ], 500);
         }
     }

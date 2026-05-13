@@ -3,32 +3,28 @@
 namespace App\Repositories\Implementation;
 
 use App\Models\DocumentAuditTrails;
-use App\Models\DocumentUserPermissions;
-use App\Repositories\Implementation\BaseRepository;
-use App\Repositories\Contracts\DocumentPermissionRepositoryInterface;
-use Carbon\Carbon;
 use App\Models\DocumentOperationEnum;
 use App\Models\Documents;
+use App\Models\DocumentUserPermissions;
 use App\Models\UserNotifications;
-use App\Models\UserRoles;
+use App\Repositories\Contracts\DocumentPermissionRepositoryInterface;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
-
 class DocumentPermissionRepository extends BaseRepository implements DocumentPermissionRepositoryInterface
 {
-
     /**
      * @var Model
      */
     protected $model;
-    private $list;
 
+    private $list;
 
     /**
      * BaseRepository constructor.
      *
-     * @param Model $model
+     * @param  Model  $model
      */
     public static function model()
     {
@@ -44,6 +40,7 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
             ->get()
             ->map(function ($item) {
                 $item->type = 'User';
+
                 return $item;
             });
     }
@@ -55,63 +52,85 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
 
             $documentUserPermissions = $request['documentUserPermissions'];
             $permissionsByDocument = [];
+            $createdModels = [];
 
-            foreach ($documentUserPermissions as $docuemntUser) {
-                $documentId = $docuemntUser['documentId'];
+            $seen = [];
+            $uniquePermissions = [];
+            foreach ($documentUserPermissions as $perm) {
+                $key = $perm['documentId'].'|'.$perm['userId'];
+                if (! isset($seen[$key])) {
+                    $seen[$key] = true;
+                    $uniquePermissions[] = $perm;
+                }
+            }
 
-                $model = DocumentUserPermissions::create([
-                    'documentId' => $documentId,
-                    'isAllowDownload' => $docuemntUser['isAllowDownload'],
-                    'userId' => $docuemntUser['userId'],
-                ]);
+            foreach ($uniquePermissions as $documentUser) {
+                $documentId = $documentUser['documentId'];
 
-                $permissionsByDocument[$documentId][] = $docuemntUser['userId'];
+                $model = DocumentUserPermissions::firstOrCreate(
+                    ['documentId' => $documentId, 'userId' => $documentUser['userId']],
+                    ['isAllowDownload' => $documentUser['isAllowDownload']]
+                );
 
-                UserNotifications::create([
-                    'documentId' => $documentId,
-                    'userId' => $docuemntUser['userId'],
-                    'type' => 'document'
-                ]);
+                $createdModels[] = $model;
+
+                if (! in_array($documentUser['userId'], $permissionsByDocument[$documentId] ?? [])) {
+                    $permissionsByDocument[$documentId][] = $documentUser['userId'];
+                }
+
+                if ($model->wasRecentlyCreated) {
+                    UserNotifications::create([
+                        'documentId' => $documentId,
+                        'userId' => $documentUser['userId'],
+                        'type' => 'document',
+                    ]);
+                }
             }
 
             foreach ($permissionsByDocument as $documentId => $userIds) {
                 DocumentAuditTrails::create([
                     'documentId' => $documentId,
-                    'createdDate' =>  Carbon::now(),
+                    'createdDate' => Carbon::now(),
                     'operationName' => DocumentOperationEnum::Add_Permission->value,
-                    'assignToUserId' => implode(',', $userIds)
+                    'assignToUserId' => implode(',', $userIds),
                 ]);
             }
 
             DB::commit();
             $this->resetModel();
-            $result = $this->parseResult($model);
-            return $result->toArray();
+            if (empty($createdModels)) {
+                return [];
+            }
+
+            return collect($createdModels)->map(function ($model) {
+                return $this->parseResult($model)->toArray();
+            })->toArray();
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json([
-                'message' => 'Error in saving data.',
-            ], 409);
+            throw $e;
         }
     }
 
     public function deleteDocumentUserPermission($id)
     {
-        $model = DocumentUserPermissions::find($id);
-        if (!is_null($model)) {
-            DocumentAuditTrails::create([
-                'documentId' => $model->documentId,
-                'createdDate' =>  Carbon::now(),
-                'operationName' => DocumentOperationEnum::Remove_Permission->value,
-                'assignToUserId' => $model->userId
-            ]);
+        return DB::transaction(function () use ($id) {
+            $model = DocumentUserPermissions::find($id);
+            if (! is_null($model)) {
+                DocumentAuditTrails::create([
+                    'documentId' => $model->documentId,
+                    'createdDate' => Carbon::now(),
+                    'operationName' => DocumentOperationEnum::Remove_Permission->value,
+                    'assignToUserId' => $model->userId,
+                ]);
 
-            UserNotifications::where('documentId', $model->documentId)
-                ->where('userId', $model->userId)
-                ->where('type', 'document')
-                ->delete();
-        }
-        return DocumentUserPermissions::destroy($id);
+                UserNotifications::where('documentId', $model->documentId)
+                    ->where('userId', $model->userId)
+                    ->where('type', 'document')
+                    ->delete();
+            }
+
+            return DocumentUserPermissions::destroy($id);
+        });
     }
 
     public function getIsDownloadFlag($id)
@@ -129,6 +148,7 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
             });
 
         $count = $query->count();
+
         return $count > 0 ? true : false;
     }
 }
