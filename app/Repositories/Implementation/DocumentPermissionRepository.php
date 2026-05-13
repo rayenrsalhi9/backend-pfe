@@ -22,8 +22,6 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
      * @var Model
      */
     protected $model;
-    protected $startDate;
-    protected $endDate;
     private $list;
 
 
@@ -56,33 +54,32 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
             DB::beginTransaction();
 
             $documentUserPermissions = $request['documentUserPermissions'];
-            $assignedUserIds = array();
-            $userDocumentId = null;
+            $permissionsByDocument = [];
 
             foreach ($documentUserPermissions as $docuemntUser) {
-                $userDocumentId = $docuemntUser['documentId'];
+                $documentId = $docuemntUser['documentId'];
 
                 $model = DocumentUserPermissions::create([
-                    'documentId' => $docuemntUser['documentId'],
+                    'documentId' => $documentId,
                     'isAllowDownload' => $docuemntUser['isAllowDownload'],
                     'userId' => $docuemntUser['userId'],
                 ]);
 
-                $assignedUserIds[] = $docuemntUser['userId'];
+                $permissionsByDocument[$documentId][] = $docuemntUser['userId'];
 
                 UserNotifications::create([
-                    'documentId' => $docuemntUser['documentId'],
+                    'documentId' => $documentId,
                     'userId' => $docuemntUser['userId'],
                     'type' => 'document'
                 ]);
             }
 
-            if (!empty($assignedUserIds) && $userDocumentId) {
+            foreach ($permissionsByDocument as $documentId => $userIds) {
                 DocumentAuditTrails::create([
-                    'documentId' => $userDocumentId,
+                    'documentId' => $documentId,
                     'createdDate' =>  Carbon::now(),
                     'operationName' => DocumentOperationEnum::Add_Permission->value,
-                    'assignToUserId' => implode(',', $assignedUserIds)
+                    'assignToUserId' => implode(',', $userIds)
                 ]);
             }
 
@@ -117,7 +114,7 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
         return DocumentUserPermissions::destroy($id);
     }
 
-    public function getIsDownloadFlag($id, $isPermission)
+    public function getIsDownloadFlag($id)
     {
         $userId = Auth::parseToken()->getPayload()->get('userId');
         $query = Documents::where('documents.id', '=', $id)

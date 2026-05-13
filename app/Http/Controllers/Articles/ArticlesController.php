@@ -161,31 +161,36 @@ class ArticlesController extends Controller
     try {
 
       $isPrivate = $request->boolean('private');
-      $article = new Articles();
-      $article->title = $request->title;
-      $article->short_text = $request->description;
-      $article->long_text = $request->body;
-      $article->picture = $request->filled('picture') ? $this->saveFile($request->picture) : '';
-      $article->privacy = $isPrivate ? 'private' : 'public';
-      $article->created_by = $user->id;
-      $article->article_category_id = $request->category;
-      $article->save();
 
-      if ($isPrivate) {
-        $users = is_array($request->users) ? $request->users : [];
-        if (!in_array($user->id, $users)) {
-            $users[] = $user->id;
-        }
-        $users = array_unique($users);
-        foreach ($users as $userId) {
-          $articleUser = new ArticleUsers();
-          $articleUser->article_id = $article->id;
-          $articleUser->user_id = $userId;
-          $articleUser->save();
-        }
-      }
+      $response = DB::transaction(function () use ($request, $user, $isPrivate) {
+        $article = new Articles();
+        $article->title = $request->title;
+        $article->short_text = $request->description;
+        $article->long_text = $request->body;
+        $article->picture = $request->filled('picture') ? $this->saveFile($request->picture) : '';
+        $article->privacy = $isPrivate ? 'private' : 'public';
+        $article->created_by = $user->id;
+        $article->article_category_id = $request->category;
+        $article->save();
 
-      $response = $article->load('category', 'users', 'users.user', 'creator');
+        if ($isPrivate) {
+          $users = is_array($request->users) ? $request->users : [];
+          if (!in_array($user->id, $users)) {
+              $users[] = $user->id;
+          }
+          $users = array_unique($users);
+          foreach ($users as $userId) {
+            $articleUser = new ArticleUsers();
+            $articleUser->article_id = $article->id;
+            $articleUser->user_id = $userId;
+            $articleUser->save();
+          }
+        }
+
+        $response = $article->load('category', 'users', 'users.user', 'creator');
+
+        return $response;
+      });
 
       $this->flushCacheTag('articles');
 
@@ -237,15 +242,16 @@ class ArticlesController extends Controller
       if (!$article) {
         return response()->json(['message' => 'Not found'], 404);
       }
+      $this->authorize('update', $article);
       $article->title = $request->title;
       $article->short_text = $request->description;
       $article->long_text = $request->body;
       $article->privacy = $isPrivate ? 'private' : 'public';
       $article->picture = $request->filled('picture') ? $this->saveFile($request->picture) : $article->picture;
       $article->article_category_id = $request->category;
-      $article->save();
 
       DB::transaction(function () use ($id, $isPrivate, $user, $request, $article) {
+        $article->save();
         ArticleUsers::where('article_id', $id)->delete();
 
         if ($isPrivate) {

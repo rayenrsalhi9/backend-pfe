@@ -461,5 +461,105 @@ class AuthTest extends TestCase
             'user',
             'authorisation' => ['token', 'type'],
         ]);
+
+        $newToken = $response->json('authorisation.token');
+        $this->assertNotEquals($token, $newToken, 'Refresh must return a different token string');
+    }
+
+    public function test_refresh_expired_token_returns_new_token()
+    {
+        $user = Users::factory()->create([
+            'email' => 'expired@example.com',
+            'password' => bcrypt('Test@1234'),
+            'userName' => 'expireduser',
+        ]);
+
+        // Create a valid token
+        $token = JWTAuth::claims([
+            'claims' => ['TEST_CLAIM'],
+            'userId' => $user->id,
+            'email' => $user->email,
+        ])->fromUser($user);
+
+        // Move clock past token TTL so the token is now expired
+        $ttl = config('jwt.ttl', 60);
+        Carbon::setTestNow(Carbon::now()->addMinutes($ttl + 1));
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/auth/refresh');
+
+        // Restore clock
+        Carbon::setTestNow();
+
+        $response->assertStatus(200);
+        $response->assertJson(['status' => 'success']);
+
+        $newToken = $response->json('authorisation.token');
+        $this->assertNotNull($newToken);
+        $this->assertNotEquals($token, $newToken);
+    }
+
+    public function test_refresh_blacklisted_token_returns_401()
+    {
+        $user = Users::factory()->create([
+            'email' => 'blacklisted@example.com',
+            'password' => bcrypt('Test@1234'),
+            'userName' => 'blacklisteduser',
+        ]);
+
+        $token = $this->getAuthToken($user);
+
+        // Blacklist the token
+        JWTAuth::setToken($token)->invalidate();
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/auth/refresh');
+
+        $response->assertStatus(401);
+        $response->assertJson(['error' => 'Token has been revoked']);
+    }
+
+    public function test_refresh_without_token_returns_401()
+    {
+        $response = $this->postJson('/api/auth/refresh', [], [
+            'Accept' => 'application/json',
+        ]);
+
+        $response->assertStatus(401);
+    }
+
+    public function test_refresh_invalid_token_string_returns_401()
+    {
+        $response = $this->withHeader('Authorization', 'Bearer invalid.token.string')
+            ->postJson('/api/auth/refresh');
+
+        $response->assertStatus(401);
+    }
+
+    public function test_refresh_returns_refreshed_claims()
+    {
+        $user = Users::factory()->create([
+            'email' => 'claims@example.com',
+            'password' => bcrypt('Test@1234'),
+            'userName' => 'claimsuser',
+        ]);
+
+        $token = JWTAuth::claims([
+            'claims' => ['ARTICLE_VIEW_ARTICLES', 'USER_VIEW_USERS'],
+            'userId' => $user->id,
+            'email' => $user->email,
+        ])->fromUser($user);
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/auth/refresh');
+
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'status',
+            'claims',
+            'user' => ['id', 'firstName', 'lastName', 'email', 'userName'],
+            'authorisation' => ['token', 'type'],
+        ]);
+        $response->assertJson(['status' => 'success']);
     }
 }

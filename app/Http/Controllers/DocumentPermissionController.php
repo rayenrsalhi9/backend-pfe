@@ -34,8 +34,8 @@ class DocumentPermissionController extends Controller
         return response()->json($this->documentPermissionRepository->deleteDocumentUserPermission($id));
     }
 
-    public function getIsDownloadFlag($id, $isPermission)
+    public function getIsDownloadFlag($id)
     {
-        return response()->json($this->documentPermissionRepository->getIsDownloadFlag($id, $isPermission));
+        return response()->json($this->documentPermissionRepository->getIsDownloadFlag($id));
     }
 }

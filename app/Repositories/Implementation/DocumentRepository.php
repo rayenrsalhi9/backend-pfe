@@ -103,16 +103,20 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         }
 
         if (property_exists($attributes, 'createDateString') && $attributes->createDateString) {
-
-            $startDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC');
-            $endDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-
-            $query = $query->whereBetween('documents.createdDate', [$startDate, $endDate]);
+            $this->applyCreateDateFilter($query, $attributes);
         }
 
         $results = $query->skip($attributes->skip)->take($attributes->pageSize)->get();
 
         return $results;
+    }
+
+    private function applyCreateDateFilter($query, $attributes)
+    {
+        $startDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC');
+        $endDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+
+        $query->whereBetween('documents.createdDate', [$startDate, $endDate]);
     }
 
     public function getDocumentsCount($attributes)
@@ -143,13 +147,7 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         }
 
         if (property_exists($attributes, 'createDateString') && $attributes->createDateString) {
-            $date = date('Y-m-d', strtotime(str_replace('/', '-', $attributes->createDateString)));
-
-            $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-            $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-
-            $query = $query->whereDate('documents.createdDate', '>=', $startDate)
-                ->whereDate('documents.createdDate', '<=', $endDate);
+            $this->applyCreateDateFilter($query, $attributes);
         }
 
         $count = $query->count();
@@ -436,11 +434,7 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         }
 
         if (property_exists($attributes, 'createDateString') && $attributes->createDateString) {
-
-            $startDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC');
-            $endDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-
-            $query = $query->whereBetween('documents.createdDate', [$startDate, $endDate]);
+            $this->applyCreateDateFilter($query, $attributes);
         }
 
         $results = $query->skip($attributes->skip)->take($attributes->pageSize)->get();

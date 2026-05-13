@@ -113,7 +113,7 @@ class ForumsController extends Controller
 
         $user = Auth::user();
 
-        if (!$this->userCanAccessForum($forum, Auth::user())) {
+        if (!$this->userCanAccessForum($forum, $user)) {
             return response()->json(['message' => 'Not found'], 404);
         }
 
@@ -195,7 +195,9 @@ class ForumsController extends Controller
                 $forum->title = $request->title;
                 $forum->content = $request->input('content');
                 $forum->category_id = $request->category;
-                $forum->closed = $request->closed;
+                if ($request->has('closed')) {
+                    $forum->closed = $request->boolean('closed');
+                }
                 $forum->save();
 
                 if ($request->has('private')) {
@@ -272,7 +274,7 @@ class ForumsController extends Controller
         }
         $user = Auth::user();
 
-        if (!$this->userCanAccessForum($forum, Auth::user())) {
+        if (!$this->userCanAccessForum($forum, $user)) {
             return response()->json(['message' => 'Not found'], 404);
         }
 
@@ -323,7 +325,7 @@ class ForumsController extends Controller
         }
         $user = Auth::user();
 
-        if (!$this->userCanAccessForum($forum, Auth::user())) {
+        if (!$this->userCanAccessForum($forum, $user)) {
             return response()->json(['message' => 'Not found'], 404);
         }
 

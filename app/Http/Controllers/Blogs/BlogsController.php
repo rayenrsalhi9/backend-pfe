@@ -93,10 +93,11 @@ class BlogsController extends Controller
             }
 
             if ($request->createdAt) {
-                $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
-                $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-
-                $query->whereBetween('created_at', [$startDate, $endDate]);
+                try {
+                    $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+                    $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+                    $query->whereBetween('created_at', [$startDate, $endDate]);
+                } catch (\Exception $e) {}
             }
 
             $blog = $query->get();
@@ -132,9 +133,11 @@ class BlogsController extends Controller
         }
 
         if ($request->createdAt) {
-            $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
-            $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-            $query->whereBetween('created_at', [$startDate, $endDate]);
+            try {
+                $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+                $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            } catch (\Exception $e) {}
         }
 
         if ($limit) {

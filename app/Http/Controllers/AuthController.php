@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Validator;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use Illuminate\Validation\Rules\Password as PasswordRule;
+use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 
 class AuthController extends Controller
 {
@@ -149,23 +150,25 @@ class AuthController extends Controller
     public function refresh()
     {
         try {
-            $token = Auth::getToken();
-            if (!$token) {
-                return response()->json(['error' => 'Token not provided'], 401);
+            JWTAuth::manager()->setRefreshFlow();
+
+            $payload = JWTAuth::parseToken()->getPayload();
+            $userId = $payload->get('userId');
+
+            if (!$userId) {
+                return response()->json(['error' => 'Invalid token'], 401);
             }
 
-            // Decode JWT payload manually to support expired tokens
-            $parts = explode('.', $token->get());
-            if (count($parts) !== 3) {
-                return response()->json(['error' => 'Invalid token format'], 401);
-            }
-            $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
+            $token = JWTAuth::getToken();
+            $tokenHash = hash('sha256', $token->get());
+            $blacklisted = DB::table('jwt_blacklist')
+                ->where('token_hash', $tokenHash)
+                ->exists();
 
-            if (!$payload || !isset($payload['userId'])) {
-                return response()->json(['error' => 'Invalid token payload'], 401);
+            if ($blacklisted) {
+                return response()->json(['error' => 'Token has been revoked'], 401);
             }
 
-            $userId = $payload['userId'];
             $user = $this->userRepository->findUser($userId);
 
             if (!$user) {
@@ -194,7 +197,7 @@ class AuthController extends Controller
 
             $user->claims = $userClaims;
 
-            $token = Auth::claims(array('claims' => $userClaims, 'email' => $user->email, 'userId' => $user->id))->refresh();
+            $token = JWTAuth::claims(array('claims' => $userClaims, 'email' => $user->email, 'userId' => $user->id))->refresh();
 
             return response()->json([
                 'status' => 'success',

@@ -284,7 +284,7 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         Route::delete('/document-user-permission/{id}', [DocumentPermissionController::class, 'deleteDocumentUserPermission']);
     });
 
-    Route::get('/document/{id}/is-download-flag/is-permission/{isPermission}', [DocumentPermissionController::class, 'getIsDownloadFlag']);
+    Route::get('/document/{id}/is-download-flag', [DocumentPermissionController::class, 'getIsDownloadFlag']);
 
     Route::get('/document-version/{documentId}', [DocumentVersionController::class, 'index']);
 
