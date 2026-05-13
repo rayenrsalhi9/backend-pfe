@@ -89,7 +89,7 @@ class ConversationController extends Controller
                     $q->where('type', 'group')
                         ->orWhereHas('messages');
                 })
-                ->with(['lastMessage', 'lastMessage.sender', 'lastMessage.document', 'users'])
+                ->with(['lastMessage', 'lastMessage.sender', 'lastMessage.document', 'users', 'lastContentMessage', 'lastContentMessage.sender', 'lastContentMessage.document'])
                 ->withMax('messages', 'created_at')
                 ->orderByDesc('messages_max_created_at')
                 ->orderByDesc('created_at')
@@ -171,7 +171,7 @@ class ConversationController extends Controller
             $conversationMessage = new ConversationMessage;
             $conversationMessage->conversation_id = $conversation->id;
             $conversationMessage->sender_id = $user->id;
-            if ($request->type != 'msg') {
+            if ($request->type !== 'msg') {
                 $filePath = $this->saveFile($request->input('content'));
                 if (empty($filePath)) {
                     return response()->json(['error' => 'Failed to save file'], 400);
@@ -208,6 +208,15 @@ class ConversationController extends Controller
     public function messageSeen($id)
     {
         $conversationMessage = ConversationMessage::where('id', $id)->first();
+        if (!$conversationMessage) {
+            return response()->json(['error' => 'Not found'], 404);
+        }
+        $isParticipant = ConversationUser::where('conversation_id', $conversationMessage->conversation_id)
+            ->where('user_id', auth()->id())->exists();
+        if (!$isParticipant) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $conversationMessage->is_read = new DateTime;
         $conversationMessage->save();
 
@@ -223,6 +232,15 @@ class ConversationController extends Controller
     public function messageDelivered($id)
     {
         $conversationMessage = ConversationMessage::where('id', $id)->first();
+        if (!$conversationMessage) {
+            return response()->json(['error' => 'Not found'], 404);
+        }
+        $isParticipant = ConversationUser::where('conversation_id', $conversationMessage->conversation_id)
+            ->where('user_id', auth()->id())->exists();
+        if (!$isParticipant) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $conversationMessage->is_delivered = new DateTime;
         $conversationMessage->save();
 
@@ -239,23 +257,31 @@ class ConversationController extends Controller
     {
 
         try {
-            $messageReaction = MessageReaction::where([
-                'conversation_message_id' => $request->mid,
-                'sender_id' => $request->uid,
-            ])->first();
-
-            $reactionType = $request->type;
-            $reactorId = $request->uid;
-            $reactedMessage = ConversationMessage::where('id', $request->mid)->first();
+            $reactorId = Auth::id();
+            $reactedMessage = ConversationMessage::where('id', $id)->first();
 
             if (! $reactedMessage) {
                 return response()->json(['error' => 'Message not found'], 404);
             }
 
+            $isParticipant = ConversationUser::where('conversation_id', $reactedMessage->conversation_id)
+                ->where('user_id', $reactorId)->exists();
+
+            if (! $isParticipant) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            $messageReaction = MessageReaction::where([
+                'conversation_message_id' => $id,
+                'sender_id' => $reactorId,
+            ])->first();
+
+            $reactionType = $request->type;
+
             $reactionTexts = [
                 'like' => 'Liked your message',
-                'heart' => 'React with ❤️ to your message',
-                'dislike' => 'React with 👎 to your message',
+                'heart' => 'Reacted with ❤️ to your message',
+                'dislike' => 'Reacted with 👎 to your message',
             ];
             $reactionText = $reactionTexts[$reactionType] ?? 'Reacted to your message';
 
@@ -263,7 +289,7 @@ class ConversationController extends Controller
                 'conversation_id' => $reactedMessage->conversation_id,
                 'sender_id' => $reactorId,
                 'type' => 'reaction',
-            ])->where('content', 'LIKE', '%'."\n".$request->mid)
+            ])->where('content', 'LIKE', '%'."\n".$id)
                 ->first();
 
             if ($messageReaction) {
@@ -277,23 +303,21 @@ class ConversationController extends Controller
                     $messageReaction->sender_id = $reactorId;
                     $messageReaction->save();
                     if ($existingReactionMsg) {
-                        $existingReactionMsg->content = $reactionText."\n".$request->mid;
+                        $existingReactionMsg->content = $reactionText."\n".$id;
                         $existingReactionMsg->save();
                     }
                 }
             } else {
                 $messageReaction = new MessageReaction;
-                $messageReaction->conversation_message_id = $request->mid;
+                $messageReaction->conversation_message_id = $id;
                 $messageReaction->type = $reactionType;
                 $messageReaction->sender_id = $reactorId;
                 $messageReaction->save();
 
-                $reactionText = $reactionType === 'like' ? 'Liked your message' : "Reacted $reactionType to your message";
-
                 $reactionMsg = new ConversationMessage;
                 $reactionMsg->conversation_id = $reactedMessage->conversation_id;
                 $reactionMsg->sender_id = $reactorId;
-                $reactionMsg->content = $reactionText;
+                $reactionMsg->content = $reactionText."\n".$id;
                 $reactionMsg->type = 'reaction';
                 $reactionMsg->document_id = null;
                 $reactionMsg->is_read = null;

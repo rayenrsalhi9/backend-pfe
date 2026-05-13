@@ -12,6 +12,7 @@ use App\Models\Documents;
 use App\Models\UserNotifications;
 use App\Models\UserRoles;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 
 class DocumentPermissionRepository extends BaseRepository implements DocumentPermissionRepositoryInterface

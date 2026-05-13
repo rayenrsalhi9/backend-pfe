@@ -67,11 +67,11 @@ class AuthController extends Controller
 
         $user = Auth::user();
 
-        $userActive = Users::find($user ->id);
+        $userActive = Users::find($user->id);
         $userActive->isConnected = true;
         $userActive->save();
 
-        $userClaimsFromRole =  DB::table('userRoles')
+        $userClaimsFromRole = DB::table('userRoles')
             ->select('roleClaims.claimType')
             ->leftJoin('roles', 'roles.id', '=', 'userRoles.roleId')
             ->leftJoin('roleClaims', 'roleClaims.roleId', '=', 'roles.id')
@@ -100,7 +100,7 @@ class AuthController extends Controller
             'claims' => $userClaims,
             'user' => [
                 'id' => $user->id,
-                'firstName' =>  $user->firstName,
+                'firstName' => $user->firstName,
                 'lastName' => $user->lastName,
                 'email' => $user->email,
                 'userName' => $user->userName,
@@ -114,11 +114,12 @@ class AuthController extends Controller
         ]);
     }
 
-    public function logout(Request $request) {
+    public function logout(Request $request)
+    {
         try {
             // Get the current token
             $token = Auth::getToken();
-            
+
             if ($token) {
                 // Add token to blacklist
                 DB::table('jwt_blacklist')->insert([
@@ -128,7 +129,7 @@ class AuthController extends Controller
                     'updated_at' => now(),
                 ]);
             }
-            
+
             // Update user connection status
             $user = Auth::user();
             if ($user) {
@@ -171,7 +172,7 @@ class AuthController extends Controller
                 return response()->json(['error' => 'User not found'], 401);
             }
 
-            $userClaimsFromRole =  DB::table('userRoles')
+            $userClaimsFromRole = DB::table('userRoles')
                 ->select('roleClaims.claimType')
                 ->leftJoin('roles', 'roles.id', '=', 'userRoles.roleId')
                 ->leftJoin('roleClaims', 'roleClaims.roleId', '=', 'roles.id')
@@ -193,14 +194,14 @@ class AuthController extends Controller
 
             $user->claims = $userClaims;
 
-            $token = Auth::claims(array('claims' => $userClaims, 'email' => $user->email, 'userId' => $user->id))->refresh($token);
+            $token = Auth::claims(array('claims' => $userClaims, 'email' => $user->email, 'userId' => $user->id))->refresh();
 
             return response()->json([
                 'status' => 'success',
                 'claims' => $userClaims,
                 'user' => [
                     'id' => $user->id,
-                    'firstName' =>  $user->firstName,
+                    'firstName' => $user->firstName,
                     'lastName' => $user->lastName,
                     'email' => $user->email,
                     'userName' => $user->userName,
@@ -267,7 +268,7 @@ class AuthController extends Controller
             'status' => 'success',
             'user' => [
                 'id' => $user->id,
-                'firstName' =>  $user->firstName,
+                'firstName' => $user->firstName,
                 'lastName' => $user->lastName,
                 'email' => $user->email,
                 'userName' => $user->userName,
@@ -296,7 +297,7 @@ class AuthController extends Controller
         $verify = User::where('email', $request->all()['email'])->exists();
 
         if ($verify) {
-            $verify2 =  DB::table('password_resets')->where([
+            $verify2 = DB::table('password_resets')->where([
                 ['email', $request->all()['email']]
             ]);
 
@@ -307,7 +308,7 @@ class AuthController extends Controller
             $token = random_int(100000, 999999);
             $password_reset = DB::table('password_resets')->insert([
                 'email' => $request->all()['email'],
-                'token' =>  $token,
+                'token' => $token,
                 'created_at' => Carbon::now()
             ]);
 
@@ -359,7 +360,7 @@ class AuthController extends Controller
 
             DB::table('password_resets')->insert([
                 'email' => $request->email,
-                'token' =>  $token,
+                'token' => $token,
                 'created_at' => Carbon::now()
             ]);
 
@@ -399,7 +400,8 @@ class AuthController extends Controller
             ['token', $request->token],
         ]);
 
-        if (! $check->exists()) return new JsonResponse(['status' => 'error', 'message' => "Token Expired"], 400);
+        if (!$check->exists())
+            return new JsonResponse(['status' => 'error', 'message' => "Token Expired"], 400);
 
         $check->delete();
 
@@ -449,8 +451,8 @@ class AuthController extends Controller
 
             // Generate token with claims
             $token = Auth::claims([
-                'claims' => $userClaims, 
-                'email' => $user->email, 
+                'claims' => $userClaims,
+                'email' => $user->email,
                 'userId' => $user->id
             ])->login($user);
 

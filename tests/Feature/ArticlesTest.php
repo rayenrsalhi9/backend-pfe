@@ -281,7 +281,7 @@ class ArticlesTest extends TestCase
                 'category' => $category->id,
             ]);
 
-        $response->assertStatus(200);
+        $response->assertStatus(403);
     }
 
     public function test_getAll_returns_public_articles_for_unauthenticated()

@@ -146,6 +146,7 @@ class ForumsController extends Controller
                     if (!in_array($user->id, $users)) {
                         $users[] = $user->id;
                     }
+                    $users = array_unique($users);
                     foreach ($users as $userId) {
                         $forumUser = new ForumUsers();
                         $forumUser->forum_id = $forum->id;
@@ -209,6 +210,7 @@ class ForumsController extends Controller
                         if (!in_array($user->id, $users)) {
                             $users[] = $user->id;
                         }
+                        $users = array_unique($users);
                         foreach ($users as $userId) {
                             $forumUser = new ForumUsers();
                             $forumUser->forum_id = $forum->id;
@@ -502,9 +504,13 @@ class ForumsController extends Controller
         }
 
         if ($request->createdAt) {
-            $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
-            $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-            $query->whereBetween('created_at', [$startDate, $endDate]);
+            try {
+                $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+                $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            } catch (\Exception $e) {
+                // Ignore invalid date
+            }
         }
 
         if ($request->limit) {

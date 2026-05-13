@@ -404,12 +404,11 @@ class ConversationControllerTest extends TestCase
     public function test_sends_file_message()
     {
         $user = Users::factory()->create();
-        $this->actingAs($user, 'api');
         $conversation = new Conversation();
         $conversation->save();
         ConversationUser::create(['conversation_id' => $conversation->id, 'user_id' => $user->id]);
 
-        $response = $this->postJson('/api/conversations/message', [
+        $response = $this->actingAsUser($user)->postJson('/api/conversations/message', [
             'conversation' => ['id' => $conversation->id],
             'content' => 'data:application/pdf;base64,JVBERi0xLjQKJ...' ,
             'type' => 'application',
@@ -564,12 +563,11 @@ class ConversationControllerTest extends TestCase
     public function test_returns_404_if_message_does_not_exist_on_reaction()
     {
         $user = Users::factory()->create();
-        $this->actingAs($user, 'api');
         $conversation = new Conversation();
         $conversation->save();
         ConversationUser::create(['conversation_id' => $conversation->id, 'user_id' => $user->id]);
 
-        $response = $this->putJson('/api/conversations/message/9999/reaction', [
+        $response = $this->actingAsUser($user)->putJson('/api/conversations/message/9999/reaction', [
             'mid' => 9999,
             'type' => 'like',
             'uid' => $user->id
@@ -601,12 +599,13 @@ class ConversationControllerTest extends TestCase
             'type' => 'like',
         ]);
 
-        $this->assertDatabaseHas('conversation_messages', [
-            'conversation_id' => $conversation->id,
-            'sender_id' => $user->id,
-            'type' => 'reaction',
-            'content' => 'Liked your message'
-        ]);
+        $exists = \Illuminate\Support\Facades\DB::table('conversation_messages')
+            ->where('conversation_id', $conversation->id)
+            ->where('sender_id', $user->id)
+            ->where('type', 'reaction')
+            ->where('content', 'like', 'Liked your message%')
+            ->exists();
+        $this->assertTrue($exists);
     }
 
     // ===========================================
@@ -824,13 +823,12 @@ class ConversationControllerTest extends TestCase
     {
         $user = Users::factory()->create();
         $other = Users::factory()->create();
-        $this->actingAs($user, 'api');
 
         $conversation = new Conversation();
         $conversation->save();
         ConversationUser::create(['conversation_id' => $conversation->id, 'user_id' => $other->id]);
 
-        $response = $this->deleteJson("/api/conversations/delete/{$conversation->id}");
+        $response = $this->actingAsUser($user)->deleteJson("/api/conversations/delete/{$conversation->id}");
 
         $response->assertStatus(403);
     }
@@ -838,7 +836,6 @@ class ConversationControllerTest extends TestCase
     public function test_marks_message_as_delivered()
     {
         $user = Users::factory()->create();
-        $this->actingAs($user, 'api');
         $conversation = new Conversation();
         $conversation->save();
         ConversationUser::create(['conversation_id' => $conversation->id, 'user_id' => $user->id]);
@@ -850,7 +847,7 @@ class ConversationControllerTest extends TestCase
             'type' => 'msg'
         ]);
 
-        $response = $this->putJson("/api/conversations/message/{$message->id}/delivered");
+        $response = $this->actingAsUser($user)->putJson("/api/conversations/message/{$message->id}/delivered");
 
         $response->assertStatus(200);
         $this->assertNotNull($message->fresh()->is_delivered);

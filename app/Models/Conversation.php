@@ -36,4 +36,11 @@ class Conversation extends Model
         return $this->hasOne(ConversationMessage::class, 'conversation_id', 'id')
             ->orderBy('created_at', 'desc');
     }
+
+    public function lastContentMessage()
+    {
+        return $this->hasOne(ConversationMessage::class, 'conversation_id', 'id')
+            ->where('type', '!=', 'reaction')
+            ->orderBy('created_at', 'desc');
+    }
 }

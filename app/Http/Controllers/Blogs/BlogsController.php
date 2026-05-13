@@ -217,8 +217,8 @@ class BlogsController extends Controller
                 $blog->category_id = $request->category;
                 $blog->save();
 
-                if ($isPrivate && is_array($request->users)) {
-                    $users = $request->users;
+                if ($isPrivate) {
+                    $users = is_array($request->users) ? $request->users : [];
                     if (!in_array($user->id, $users)) {
                         $users[] = $user->id;
                     }
@@ -232,9 +232,11 @@ class BlogsController extends Controller
 
                 if ($tags && count($tags) > 0) {
                     foreach ($tags as $tag) {
+                        $label = is_string($tag) ? $tag : (isset($tag['label']) && is_string($tag['label']) && $tag['label'] !== '' ? $tag['label'] : null);
+                        if (!$label) continue;
                         $blogTag = new Tags();
                         $blogTag->blog_id = $blog->id;
-                        $blogTag->metatag = $tag['label'];
+                        $blogTag->metatag = $label;
                         $blogTag->created_by = $user->id;
                         $blogTag->save();
                     }
@@ -292,8 +294,8 @@ class BlogsController extends Controller
 
                     BlogUsers::where('blog_id', $id)->delete();
 
-                    if ($isPrivate && is_array($request->users)) {
-                        $users = $request->users;
+                    if ($isPrivate) {
+                        $users = is_array($request->users) ? $request->users : [];
                         if (!in_array($user->id, $users)) {
                             $users[] = $user->id;
                         }
@@ -310,9 +312,11 @@ class BlogsController extends Controller
                     Tags::where('blog_id', $blog->id)->delete();
                     if ($tags && count($tags) > 0) {
                         foreach ($tags as $key => $tag) {
+                            $label = is_string($tag) ? $tag : (isset($tag['label']) && is_string($tag['label']) && $tag['label'] !== '' ? $tag['label'] : null);
+                            if (!$label) continue;
                             $blogTag = new Tags();
                             $blogTag->blog_id = $blog->id;
-                            $blogTag->metatag = $tag['label'];
+                            $blogTag->metatag = $label;
                             $blogTag->created_by = $user->id;
                             $blogTag->save();
                         }

@@ -18,7 +18,7 @@ return new class extends Migration
                 $query->select('conversation_id')
                     ->from('conversation_users')
                     ->groupBy('conversation_id')
-                    ->havingRaw('COUNT(*) > 2');
+                    ->havingRaw('COUNT(DISTINCT user_id) > 2');
             })
             ->orWhereNotNull('title')
             ->update(['type' => 'group']);

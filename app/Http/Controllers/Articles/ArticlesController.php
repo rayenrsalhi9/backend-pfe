@@ -20,6 +20,12 @@ class ArticlesController extends Controller
   use HasPermissionTrait;
   use CacheableTrait;
 
+  public function __construct()
+  {
+      $this->middleware('hasToken:ARTICLE_VIEW_ARTICLES')->only('getAllForDashboard');
+      $this->middleware('hasToken:ARTICLE_EDIT_ARTICLE')->only('update');
+  }
+
   private function saveFile($image_64)
   {
 
@@ -85,10 +91,12 @@ class ArticlesController extends Controller
       }
 
       if ($request->createdAt) {
-        $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
-        $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+        try {
+            $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+            $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
 
-        $query->whereBetween('created_at', [$startDate, $endDate]);
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        } catch (\Exception $e) {}
       }
 
       $articles = $query->get();
@@ -124,9 +132,11 @@ class ArticlesController extends Controller
     }
 
     if ($request->createdAt) {
-      $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
-      $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-      $query->whereBetween('created_at', [$startDate, $endDate]);
+      try {
+          $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+          $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+          $query->whereBetween('created_at', [$startDate, $endDate]);
+      } catch (\Exception $e) {}
     }
 
     if ($limit) {
@@ -166,6 +176,7 @@ class ArticlesController extends Controller
         if (!in_array($user->id, $users)) {
             $users[] = $user->id;
         }
+        $users = array_unique($users);
         foreach ($users as $userId) {
           $articleUser = new ArticleUsers();
           $articleUser->article_id = $article->id;
@@ -242,6 +253,7 @@ class ArticlesController extends Controller
           if (!in_array($user->id, $users)) {
               $users[] = $user->id;
           }
+          $users = array_unique($users);
           foreach ($users as $userId) {
             $articleUser = new ArticleUsers();
             $articleUser->article_id = $article->id;
