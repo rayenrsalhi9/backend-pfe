@@ -35,6 +35,7 @@ use App\Http\Controllers\Forums\ForumCategoriesController;
 use App\Http\Controllers\Forums\ForumsController;
 use App\Http\Controllers\ResponseAuditTrailController;
 use App\Http\Controllers\SurverysController;
+use App\Http\Controllers\AiController;
 
 /*
 |--------------------------------------------------------------------------
@@ -67,6 +68,8 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::post('/company-profile', [CompanyProfileController::class, 'updateCompanyProfile'])
         ->middleware('can:updateCompanyProfile');
+
+    Route::post('/ai/generate', [AiController::class, 'generate']);
 
     Route::post('pusher/auth', function (Request $request) {
 

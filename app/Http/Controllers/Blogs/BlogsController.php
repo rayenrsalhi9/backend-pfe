@@ -9,7 +9,7 @@ use App\Models\BlogReactions;
 use App\Models\Blogs;
 use App\Models\BlogUsers;
 use App\Models\ResponseAuditTrails;
-use App\Models\Tags;
+
 use App\Traits\CacheableTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -74,7 +74,7 @@ class BlogsController extends Controller
             $grouped = $request->grouped;
 
             $query = Blogs::orderBy('created_at', 'DESC')
-                ->with('category', 'creator', 'tags', 'allowedUsers')
+                ->with('category', 'creator', 'allowedUsers')
                 ->withCount(['comments', 'reactions', 'reactionsUp', 'reactionsDown'])
                 ->where(function ($query) use ($user) {
                     $query->where('privacy', 'public');
@@ -134,7 +134,7 @@ class BlogsController extends Controller
         $limit = $request->limit;
 
         $query = Blogs::orderBy('created_at', 'DESC')
-            ->with('category', 'creator', 'tags', 'allowedUsers')
+            ->with('category', 'creator', 'allowedUsers')
             ->withCount(['comments', 'reactions', 'reactionsUp', 'reactionsDown']);
 
         if ($request->title) {
@@ -178,7 +178,7 @@ class BlogsController extends Controller
 
         $blog = $this->cacheRemember($cacheKey, 'blogs', $ttl, function () use ($id) {
             return Blogs::where('id', $id)
-                ->with('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user', 'tags', 'allowedUsers.user')
+                ->with('category', 'creator', 'reactions', 'reactionsUp', 'reactionsDown', 'reactions.user', 'comments', 'comments.user', 'allowedUsers.user')
                 ->withCount(['comments'])
                 ->first();
         });
@@ -213,12 +213,11 @@ class BlogsController extends Controller
     {
 
         $user = Auth::user();
-        $tags = $request->tags;
         $picturePath = null;
 
         try {
 
-            DB::transaction(function () use ($request, $user, $tags, &$picturePath, &$response) {
+            DB::transaction(function () use ($request, $user, &$picturePath, &$response) {
                 $blog = new Blogs;
                 $blog->title = $request->title;
                 $blog->subtitle = $request->subtitle;
@@ -254,21 +253,7 @@ class BlogsController extends Controller
                     }
                 }
 
-                if ($tags && count($tags) > 0) {
-                    foreach ($tags as $tag) {
-                        $label = is_string($tag) ? $tag : (isset($tag['label']) && is_string($tag['label']) && $tag['label'] !== '' ? $tag['label'] : null);
-                        if (! $label) {
-                            continue;
-                        }
-                        $blogTag = new Tags;
-                        $blogTag->blog_id = $blog->id;
-                        $blogTag->metatag = $label;
-                        $blogTag->created_by = $user->id;
-                        $blogTag->save();
-                    }
-                }
-
-                $response = $blog->load('category', 'creator', 'tags', 'allowedUsers');
+                $response = $blog->load('category', 'creator', 'allowedUsers');
             });
 
             $this->flushCacheTag('blogs');
@@ -287,7 +272,6 @@ class BlogsController extends Controller
     {
 
         $user = Auth::user();
-        $tags = $request->tags;
         $picturePath = null;
         $oldPicture = null;
 
@@ -300,7 +284,7 @@ class BlogsController extends Controller
 
         try {
 
-            DB::transaction(function () use ($blog, $id, $request, $user, $tags, &$picturePath, &$oldPicture) {
+            DB::transaction(function () use ($blog, $id, $request, $user, &$picturePath, &$oldPicture) {
                 if ($request->filled('title')) {
                     $blog->title = $request->title;
                 }
@@ -347,29 +331,13 @@ class BlogsController extends Controller
                     }
                 }
 
-                if ($request->has('tags')) {
-                    Tags::where('blog_id', $blog->id)->delete();
-                    if ($tags && count($tags) > 0) {
-                        foreach ($tags as $tag) {
-                            $label = is_string($tag) ? $tag : (isset($tag['label']) && is_string($tag['label']) && $tag['label'] !== '' ? $tag['label'] : null);
-                            if (! $label) {
-                                continue;
-                            }
-                            $blogTag = new Tags;
-                            $blogTag->blog_id = $blog->id;
-                            $blogTag->metatag = $label;
-                            $blogTag->created_by = $user->id;
-                            $blogTag->save();
-                        }
-                    }
-                }
             });
 
             if ($oldPicture && file_exists(public_path($oldPicture))) {
                 unlink(public_path($oldPicture));
             }
 
-            $response = $blog->load('category', 'creator', 'tags', 'allowedUsers');
+            $response = $blog->load('category', 'creator', 'allowedUsers');
 
             $this->flushCacheTag('blogs');
 
