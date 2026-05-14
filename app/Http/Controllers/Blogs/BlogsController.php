@@ -218,7 +218,7 @@ class BlogsController extends Controller
 
         try {
 
-            DB::transaction(function () use ($request, $user, $tags, &$picturePath) {
+            DB::transaction(function () use ($request, $user, $tags, &$picturePath, &$response) {
                 $blog = new Blogs;
                 $blog->title = $request->title;
                 $blog->subtitle = $request->subtitle;
@@ -226,6 +226,9 @@ class BlogsController extends Controller
 
                 if ($request->filled('picture')) {
                     $picturePath = $this->saveFile($request->picture);
+                    if (empty($picturePath)) {
+                        throw new \Exception('Failed to save picture');
+                    }
                     $blog->picture = $picturePath;
                 } else {
                     $blog->picture = '';
@@ -265,22 +268,20 @@ class BlogsController extends Controller
                     }
                 }
 
-                $this->blogResponse = $blog->load('category', 'creator', 'tags', 'allowedUsers');
+                $response = $blog->load('category', 'creator', 'tags', 'allowedUsers');
             });
 
             $this->flushCacheTag('blogs');
 
-            return response()->json($this->blogResponse, 200);
+            return response()->json($response, 200);
         } catch (\Throwable $th) {
             if ($picturePath && file_exists(public_path($picturePath))) {
                 unlink(public_path($picturePath));
             }
 
-            return response('Update failed', 500);
+            return response('Failed to create blog', 500);
         }
     }
-
-    private $blogResponse;
 
     public function update($id, Request $request)
     {
@@ -307,6 +308,9 @@ class BlogsController extends Controller
                 if ($request->filled('picture')) {
                     $oldPicture = $blog->picture;
                     $picturePath = $this->saveFile($request->picture);
+                    if (empty($picturePath)) {
+                        throw new \Exception('Failed to save picture');
+                    }
                     $blog->picture = $picturePath;
                 }
 
@@ -338,7 +342,7 @@ class BlogsController extends Controller
                 if ($request->has('tags')) {
                     Tags::where('blog_id', $blog->id)->delete();
                     if ($tags && count($tags) > 0) {
-                        foreach ($tags as $key => $tag) {
+                        foreach ($tags as $tag) {
                             $label = is_string($tag) ? $tag : (isset($tag['label']) && is_string($tag['label']) && $tag['label'] !== '' ? $tag['label'] : null);
                             if (! $label) {
                                 continue;
