@@ -301,9 +301,15 @@ class BlogsController extends Controller
         try {
 
             DB::transaction(function () use ($blog, $id, $request, $user, $tags, &$picturePath, &$oldPicture) {
-                $blog->title = $request->title;
-                $blog->subtitle = $request->subtitle;
-                $blog->body = $request->body;
+                if ($request->filled('title')) {
+                    $blog->title = $request->title;
+                }
+                if ($request->filled('subtitle')) {
+                    $blog->subtitle = $request->subtitle;
+                }
+                if ($request->filled('body')) {
+                    $blog->body = $request->body;
+                }
 
                 if ($request->filled('picture')) {
                     $oldPicture = $blog->picture;
@@ -314,7 +320,9 @@ class BlogsController extends Controller
                     $blog->picture = $picturePath;
                 }
 
-                $blog->category_id = $request->category;
+                if ($request->has('category')) {
+                    $blog->category_id = $request->category;
+                }
                 $blog->save();
 
                 if ($request->has('private')) {

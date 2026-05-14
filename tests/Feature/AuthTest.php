@@ -317,6 +317,9 @@ class AuthTest extends TestCase
         $this->assertDatabaseMissing('password_resets', [
             'email' => 'test@example.com',
         ]);
+
+        $user->refresh();
+        $this->assertTrue(Hash::check('NewPass@123', $user->password));
     }
 
     public function test_reset_password_with_invalid_token_returns_error()
@@ -485,26 +488,27 @@ class AuthTest extends TestCase
         $ttl = config('jwt.ttl', 60);
         Carbon::setTestNow(Carbon::now()->addMinutes($ttl + 1));
 
-        // Assert the token is actually expired
         try {
-            JWTAuth::setToken($token)->authenticate();
-            $this->fail('Token should have expired');
-        } catch (\PHPOpenSourceSaver\JWTAuth\Exceptions\TokenExpiredException $e) {
-            $this->assertTrue(true);
+            // Assert the token is actually expired
+            try {
+                JWTAuth::setToken($token)->authenticate();
+                $this->fail('Token should have expired');
+            } catch (\PHPOpenSourceSaver\JWTAuth\Exceptions\TokenExpiredException $e) {
+                $this->assertTrue(true);
+            }
+
+            $response = $this->withHeader('Authorization', "Bearer {$token}")
+                ->postJson('/api/auth/refresh');
+
+            $response->assertStatus(200);
+            $response->assertJson(['status' => 'success']);
+
+            $newToken = $response->json('authorisation.token');
+            $this->assertNotNull($newToken);
+            $this->assertNotEquals($token, $newToken);
+        } finally {
+            Carbon::setTestNow();
         }
-
-        $response = $this->withHeader('Authorization', "Bearer {$token}")
-            ->postJson('/api/auth/refresh');
-
-        // Restore clock
-        Carbon::setTestNow();
-
-        $response->assertStatus(200);
-        $response->assertJson(['status' => 'success']);
-
-        $newToken = $response->json('authorisation.token');
-        $this->assertNotNull($newToken);
-        $this->assertNotEquals($token, $newToken);
     }
 
     public function test_refresh_rejects_token_present_in_custom_jwt_blacklist()
