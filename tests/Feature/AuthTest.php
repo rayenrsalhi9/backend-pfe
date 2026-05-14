@@ -451,7 +451,7 @@ class AuthTest extends TestCase
         ]);
 
         $token = $this->getAuthToken($user);
-        $response = $this->actingAsUser($user)
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/auth/refresh');
 
         $response->assertStatus(200);

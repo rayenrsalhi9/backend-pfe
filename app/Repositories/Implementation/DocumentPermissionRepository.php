@@ -19,8 +19,6 @@ class DocumentPermissionRepository extends BaseRepository implements DocumentPer
      */
     protected $model;
 
-    private $list;
-
     /**
      * BaseRepository constructor.
      *

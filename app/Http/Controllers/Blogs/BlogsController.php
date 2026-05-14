@@ -37,9 +37,23 @@ class BlogsController extends Controller
 
             $destinationPath = public_path().'/images//';
 
+            if (! is_dir($destinationPath)) {
+                mkdir($destinationPath, 0755, true);
+            }
+
             $imageName = Uuid::uuid4().'.'.$extension;
 
-            file_put_contents($destinationPath.$imageName, base64_decode($image));
+            $decoded = base64_decode($image, true);
+
+            if ($decoded === false) {
+                throw new \Exception('Base64 decode failed');
+            }
+
+            $bytes = file_put_contents($destinationPath.$imageName, $decoded);
+
+            if ($bytes === false) {
+                throw new \Exception('Failed to write file');
+            }
 
             return 'images/'.$imageName;
         } catch (\Exception $e) {
@@ -285,7 +299,7 @@ class BlogsController extends Controller
 
         try {
 
-            DB::transaction(function () use ($blog, $id, $request, $user, $tags, &$picturePath) {
+            DB::transaction(function () use ($blog, $id, $request, $user, $tags, &$picturePath, &$oldPicture) {
                 $blog->title = $request->title;
                 $blog->subtitle = $request->subtitle;
                 $blog->body = $request->body;
@@ -467,21 +481,21 @@ class BlogsController extends Controller
 
             $comment = BlogComments::find($commentId);
 
+            if (! $comment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Comment not found',
+                ], 404);
+            }
+
             $canDelete = $this->hasPermission('BLOG_DELETE_COMMENT');
-            $isOwner = $comment && $comment->user_id === $user->id;
+            $isOwner = $comment->user_id === $user->id;
 
             if (! $canDelete && ! $isOwner) {
                 return response()->json([
                     'success' => false,
                     'message' => 'You do not have permission to delete comments.',
                 ], 403);
-            }
-
-            if (! $comment) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Comment not found',
-                ], 404);
             }
 
             $blogId = $comment->blog_id;
