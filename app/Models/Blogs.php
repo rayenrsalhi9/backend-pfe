@@ -62,4 +62,9 @@ class Blogs extends Model
     {
         return $this->hasMany(Tags::class, 'blog_id', 'id')->orderBy('created_at', 'asc');
     }
+
+    public function allowedUsers()
+    {
+        return $this->hasMany(BlogUsers::class, 'blog_id', 'id');
+    }
 }

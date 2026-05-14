@@ -46,11 +46,13 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
             $model->save();
             $this->resetModel();
             $result = $this->parseResult($model);
+            if (isset($attributes['roleIds']) && is_array($attributes['roleIds'])) {
             foreach ($attributes['roleIds'] as $roleId) {
                 $model = UserRoles::create(array(
                     'userId' =>   $result->id,
                     'roleId' =>  $roleId,
                 ));
+            }
             }
             DB::commit();
             return $result;

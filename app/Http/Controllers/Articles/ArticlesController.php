@@ -12,12 +12,19 @@ use App\Http\Controllers\Traits\HasPermissionTrait;
 use App\Traits\CacheableTrait;
 use App\Models\ArticleComments;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ArticlesController extends Controller
 {
   use HasPermissionTrait;
   use CacheableTrait;
+
+  public function __construct()
+  {
+      $this->middleware('hasToken:ARTICLE_VIEW_ARTICLES')->only('getAllForDashboard');
+      $this->middleware('hasToken:ARTICLE_EDIT_ARTICLE')->only('update');
+  }
 
   private function saveFile($image_64)
   {
@@ -46,7 +53,7 @@ class ArticlesController extends Controller
   {
 
     $viewer = Auth::id() ?? 'guest';
-    $cacheKey = $this->getCacheKey('articles', 'list', md5(json_encode($request->all())), $viewer);
+    $cacheKey = $this->getCacheKey('articles', 'list', $this->normalizeRequestParams($request->all()), $viewer);
     $ttl = $this->getCacheTtl('articles');
 
     $articles = $this->cacheRemember($cacheKey, 'articles', $ttl, function () use ($request) {
@@ -84,16 +91,59 @@ class ArticlesController extends Controller
       }
 
       if ($request->createdAt) {
-        $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
-        $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+        try {
+            $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+            $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
 
-        $query->whereBetween('created_at', [$startDate, $endDate]);
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        } catch (\Exception $e) {}
       }
 
       $articles = $query->get();
 
       return $articles;
     });
+
+    $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
+    foreach ($articles as $a) {
+      $a->setAttribute('canDeleteComments', $canDelete);
+    }
+
+    return response()->json($articles, 200);
+  }
+
+  function getAllForDashboard(Request $request)
+  {
+    $limit = $request->limit;
+
+    $query = Articles::orderBy('created_at', 'DESC')
+      ->with('category', 'creator', 'users', 'users.user')
+      ->withCount(['comments']);
+
+    if ($request->name) {
+      $query->where(function ($query) use ($request) {
+        $query->where('title', 'like', '%' . $request->name . '%')
+          ->orWhere('short_text', 'like', '%' . $request->name . '%');
+      });
+    }
+
+    if ($request->articleCategoryId) {
+      $query->where('article_category_id', $request->articleCategoryId);
+    }
+
+    if ($request->createdAt) {
+      try {
+          $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+          $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+          $query->whereBetween('created_at', [$startDate, $endDate]);
+      } catch (\Exception $e) {}
+    }
+
+    if ($limit) {
+      $query->take($limit);
+    }
+
+    $articles = $query->get();
 
     $canDelete = $this->hasPermission('ARTICLE_DELETE_COMMENT');
     foreach ($articles as $a) {
@@ -110,26 +160,37 @@ class ArticlesController extends Controller
 
     try {
 
-      $article = new Articles();
-      $article->title = $request->title;
-      $article->short_text = $request->description;
-      $article->long_text = $request->body;
-      $article->picture = isset($request->picture) ? $this->saveFile($request->picture) : null;
-      $article->privacy = $request->private ? 'private' : 'public';
-      $article->created_by = $user->id;
-      $article->article_category_id = $request->category;
-      $article->save();
+      $isPrivate = $request->boolean('private');
 
-      if ($request->private) {
-        foreach ($request->users as $key => $user) {
-          $articleUser = new ArticleUsers();
-          $articleUser->article_id = $article->id;
-          $articleUser->user_id = $user;
-          $articleUser->save();
+      $response = DB::transaction(function () use ($request, $user, $isPrivate) {
+        $article = new Articles();
+        $article->title = $request->title;
+        $article->short_text = $request->description;
+        $article->long_text = $request->body;
+        $article->picture = $request->filled('picture') ? $this->saveFile($request->picture) : '';
+        $article->privacy = $isPrivate ? 'private' : 'public';
+        $article->created_by = $user->id;
+        $article->article_category_id = $request->category;
+        $article->save();
+
+        if ($isPrivate) {
+          $users = is_array($request->users) ? $request->users : [];
+          if (!in_array($user->id, $users)) {
+              $users[] = $user->id;
+          }
+          $users = array_unique($users);
+          foreach ($users as $userId) {
+            $articleUser = new ArticleUsers();
+            $articleUser->article_id = $article->id;
+            $articleUser->user_id = $userId;
+            $articleUser->save();
+          }
         }
-      }
 
-      $response = $article->load('category', 'users', 'users.user', 'creator');
+        $response = $article->load('category', 'users', 'users.user', 'creator');
+
+        return $response;
+      });
 
       $this->flushCacheTag('articles');
 
@@ -176,27 +237,37 @@ class ArticlesController extends Controller
 
     try {
 
+      $isPrivate = $request->boolean('private');
       $article = Articles::where('id', $id)->first();
+      if (!$article) {
+        return response()->json(['message' => 'Not found'], 404);
+      }
+      $this->authorize('update', $article);
       $article->title = $request->title;
       $article->short_text = $request->description;
       $article->long_text = $request->body;
-      $article->privacy = $request->private ? 'private' : 'public';
-      $article->picture = isset($request->picture) ? $this->saveFile($request->picture) : $article->picture;
-      $article->created_by = $user->id;
+      $article->privacy = $isPrivate ? 'private' : 'public';
+      $article->picture = $request->filled('picture') ? $this->saveFile($request->picture) : $article->picture;
       $article->article_category_id = $request->category;
-      $article->save();
 
-      if ($request->private) {
-
+      DB::transaction(function () use ($id, $isPrivate, $user, $request, $article) {
+        $article->save();
         ArticleUsers::where('article_id', $id)->delete();
 
-        foreach ($request->users as $key => $user) {
-          $articleUser = new ArticleUsers();
-          $articleUser->article_id = $article->id;
-          $articleUser->user_id = $user;
-          $articleUser->save();
+        if ($isPrivate) {
+          $users = is_array($request->users) ? $request->users : [];
+          if (!in_array($user->id, $users)) {
+              $users[] = $user->id;
+          }
+          $users = array_unique($users);
+          foreach ($users as $userId) {
+            $articleUser = new ArticleUsers();
+            $articleUser->article_id = $article->id;
+            $articleUser->user_id = $userId;
+            $articleUser->save();
+          }
         }
-      }
+      });
 
       $response = $article->load('category', 'users', 'users.user', 'creator');
 
@@ -211,6 +282,8 @@ class ArticlesController extends Controller
   function delete($id)
   {
     $category = Articles::where('id', $id)->first();
+    if (!$category) return response()->json(['message' => 'Not found'], 404);
+    $this->authorize('delete', $category);
     $category->delete();
 
     $this->flushCacheTag('articles');

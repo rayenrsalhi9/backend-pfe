@@ -19,19 +19,9 @@ class DocumentPermissionController extends Controller
         return response()->json($this->documentPermissionRepository->all());
     }
 
-    public function addDocumentRolePermission(Request $request)
-    {
-        return  response()->json($this->documentPermissionRepository->addDocumentRolePermission($request->all()));
-    }
-
     public function addDocumentUserPermission(Request $request)
     {
         return  response()->json($this->documentPermissionRepository->addDocumentUserPermission($request->all()));
-    }
-
-    public function multipleDocumentsToUsersAndRoles(Request $request)
-    {
-        return  response()->json($this->documentPermissionRepository->multipleDocumentsToUsersAndRoles($request->all()));
     }
 
     public function edit($id)
@@ -44,13 +34,8 @@ class DocumentPermissionController extends Controller
         return response()->json($this->documentPermissionRepository->deleteDocumentUserPermission($id));
     }
 
-    public function deleteDocumentRolePermission($id)
+    public function getIsDownloadFlag($id)
     {
-        return response()->json($this->documentPermissionRepository->deleteDocumentRolePermission($id));
-    }
-
-    public function getIsDownloadFlag($id, $isPermission)
-    {
-        return response()->json($this->documentPermissionRepository->getIsDownloadFlag($id, $isPermission));
+        return response()->json($this->documentPermissionRepository->getIsDownloadFlag($id));
     }
 }

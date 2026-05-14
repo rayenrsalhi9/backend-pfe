@@ -21,7 +21,7 @@ class DocumentUserPermissions extends Model
     const UPDATED_AT = 'modifiedDate';
 
     protected $fillable = [
-        'documentId', 'userId','isTimeBound', 'startDate','endDate','isAllowDownload','createdBy',
+        'documentId', 'userId','isAllowDownload','createdBy',
         'modifiedBy', 'isDeleted'
     ];
 

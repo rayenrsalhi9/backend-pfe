@@ -9,11 +9,13 @@ use App\Models\ForumComments;
 use App\Models\ForumReactions;
 use App\Models\Forums;
 use App\Models\Tags;
+use App\Models\ForumUsers;
 use App\Models\ResponseAuditTrails;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class ForumsController extends Controller
 {
@@ -22,55 +24,61 @@ class ForumsController extends Controller
 
     function getAll(Request $request)
     {
-        $cacheKey = $this->getCacheKey('forums', 'list', md5(json_encode($request->all())));
+        $viewer = Auth::id() ?? 'guest';
+        $cacheKey = $this->getCacheKey('forums', 'list', $this->normalizeRequestParams($request->all()), $viewer);
         $ttl = $this->getCacheTtl('forums');
 
         $forums = $this->cacheRemember($cacheKey, 'forums', $ttl, function () use ($request) {
-            $limit = $request->limit;
-            $banner = $request->banner;
+            $user = Auth::user();
 
             $query = Forums::orderBy('created_at', 'DESC')
                 ->with(['creator' => function ($q) {
                     $q->select('users.id', 'users.firstName', 'users.lastName', 'users.userName', 'users.avatar', 'users.isDeleted')->withoutGlobalScope('isDeleted');
                 }])
-                ->with('category')
+                ->with('category', 'allowedUsers')
                 ->withCount(['reactions', 'comments'])
-                ->when($limit, function ($query) use ($limit) {
-                    return $query->take($limit);
+                ->where(function ($query) use ($user) {
+                    $query->where('privacy', 'public');
+                    if ($user) {
+                        $query->orWhere(function ($query) use ($user) {
+                            $query->where('privacy', 'private')
+                                ->where(function ($query) use ($user) {
+                                    $query->whereHas('allowedUsers', function ($query) use ($user) {
+                                        $query->where('user_id', $user->id);
+                                    });
+                                    $query->orWhere('created_by', $user->id);
+                                });
+                        });
+                    }
                 });
 
-            if ($request->has('banner')) {
-                $parsedBanner = filter_var($request->banner, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-                if ($parsedBanner !== null) {
-                    $query->where('banner', $parsedBanner);
-                }
-            }
-
-            if ($request->has('closed')) {
-                $bool = filter_var($request->closed, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-                if ($bool !== null) {
-                    $query->where('closed', $bool);
-                }
-            }
-
-            if ($request->title) {
-                $query->where('title', 'like', '%' . $request->title . '%');
-            }
-
-            if ($request->category) {
-                $query->where('category_id', $request->category);
-            }
-
-            if ($request->createdAt) {
-                $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
-                $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-                $query->whereBetween('created_at', [$startDate, $endDate]);
-            }
+            $this->applyForumFilters($query, $request);
 
             $forums = $query->get();
 
             return $forums;
         });
+
+        $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
+        foreach ($forums as $f) {
+            $f->setAttribute('canDeleteComments', $canDelete);
+        }
+
+        return response()->json($forums, 200);
+    }
+
+    function getAllForDashboard(Request $request)
+    {
+        $query = Forums::orderBy('created_at', 'DESC')
+            ->with(['creator' => function ($q) {
+                $q->select('users.id', 'users.firstName', 'users.lastName', 'users.userName', 'users.avatar', 'users.isDeleted')->withoutGlobalScope('isDeleted');
+            }])
+            ->with('category', 'allowedUsers')
+            ->withCount(['reactions', 'comments']);
+
+        $this->applyForumFilters($query, $request);
+
+        $forums = $query->get();
 
         $canDelete = $this->hasPermission('FORUM_DELETE_COMMENT');
         foreach ($forums as $f) {
@@ -93,12 +101,19 @@ class ForumsController extends Controller
                 'reactions.user',
                 'comments',
                 'comments.user',
-                'tags'
+                'tags',
+                'allowedUsers.user'
             )
             ->withCount(['reactions', 'comments'])
             ->first();
 
         if (!$forum) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        $user = Auth::user();
+
+        if (!$this->userCanAccessForum($forum, $user)) {
             return response()->json(['message' => 'Not found'], 404);
         }
 
@@ -115,29 +130,46 @@ class ForumsController extends Controller
         $tags = is_array($rawTags) ? $rawTags : [];
 
         try {
-            $forum = new Forums();
-            $forum->title = $request->title;
-            $forum->content = $request->input('content');
-            $forum->privacy = $request->private ? 'private' : 'public';
-            $forum->created_by = $user->id;
-            $forum->category_id = $request->category;
-            $forum->closed = false;
-            $forum->save();
+            DB::transaction(function () use ($request, $user, $tags, &$response) {
+                $forum = new Forums();
+                $forum->title = $request->title;
+                $forum->content = $request->input('content');
+                $isPrivate = $request->boolean('private');
+                $forum->privacy = $isPrivate ? 'private' : 'public';
+                $forum->created_by = $user->id;
+                $forum->category_id = $request->category;
+                $forum->closed = false;
+                $forum->save();
 
-            if (!empty($tags)) {
-                foreach ($tags as $tag) {
-                    if (!isset($tag['label']) || !is_string($tag['label'])) {
-                        continue;
+                if ($isPrivate) {
+                    $users = is_array($request->users) ? $request->users : [];
+                    if (!in_array($user->id, $users)) {
+                        $users[] = $user->id;
                     }
-                    $forumTag = new Tags();
-                    $forumTag->forum_id = $forum->id;
-                    $forumTag->metatag = $tag['label'];
-                    $forumTag->created_by = $user->id;
-                    $forumTag->save();
+                    $users = array_unique($users);
+                    foreach ($users as $userId) {
+                        $forumUser = new ForumUsers();
+                        $forumUser->forum_id = $forum->id;
+                        $forumUser->user_id = $userId;
+                        $forumUser->save();
+                    }
                 }
-            }
 
-            $response = $forum->load('category', 'creator', 'tags');
+                if (!empty($tags)) {
+                    foreach ($tags as $tag) {
+                        if (!isset($tag['label']) || !is_string($tag['label'])) {
+                            continue;
+                        }
+                        $forumTag = new Tags();
+                        $forumTag->forum_id = $forum->id;
+                        $forumTag->metatag = $tag['label'];
+                        $forumTag->created_by = $user->id;
+                        $forumTag->save();
+                    }
+                }
+
+                $response = $forum->load('category', 'creator', 'tags', 'allowedUsers');
+            });
 
             $this->flushCacheTag('forums');
 
@@ -158,31 +190,57 @@ class ForumsController extends Controller
             if (!$forum) {
                 return response()->json(['message' => 'Not found'], 404);
             }
-            $forum->title = $request->title;
-            $forum->content = $request->input('content');
-            $forum->privacy = $request->private ? 'private' : 'public';
-            $forum->category_id = $request->category;
-            $forum->closed = $request->closed;
-            $forum->save();
 
-            if ($tags !== null) {
-                Tags::where('forum_id', $forum->id)->delete();
+            DB::transaction(function () use ($forum, $id, $request, $user, $tags, &$response) {
+                $forum->title = $request->title;
+                $forum->content = $request->input('content');
+                $forum->category_id = $request->category;
+                if ($request->has('closed')) {
+                    $forum->closed = $request->boolean('closed');
+                }
+                $forum->save();
 
-                if (!empty($tags)) {
-                    foreach ($tags as $tag) {
-                        if (!isset($tag['label']) || !is_string($tag['label'])) {
-                            continue;
+                if ($request->has('private')) {
+                    $isPrivate = $request->boolean('private');
+                    $forum->privacy = $isPrivate ? 'private' : 'public';
+                    $forum->save();
+
+                    ForumUsers::where('forum_id', $forum->id)->delete();
+
+                    if ($isPrivate) {
+                        $users = is_array($request->users) ? $request->users : [];
+                        if (!in_array($user->id, $users)) {
+                            $users[] = $user->id;
                         }
-                        $forumTag = new Tags();
-                        $forumTag->forum_id = $forum->id;
-                        $forumTag->metatag = $tag['label'];
-                        $forumTag->created_by = $user->id;
-                        $forumTag->save();
+                        $users = array_unique($users);
+                        foreach ($users as $userId) {
+                            $forumUser = new ForumUsers();
+                            $forumUser->forum_id = $forum->id;
+                            $forumUser->user_id = $userId;
+                            $forumUser->save();
+                        }
                     }
                 }
-            }
 
-            $response = $forum->load('category', 'creator', 'tags');
+                if ($tags !== null) {
+                    Tags::where('forum_id', $forum->id)->delete();
+
+                    if (!empty($tags)) {
+                        foreach ($tags as $tag) {
+                            if (!isset($tag['label']) || !is_string($tag['label'])) {
+                                continue;
+                            }
+                            $forumTag = new Tags();
+                            $forumTag->forum_id = $forum->id;
+                            $forumTag->metatag = $tag['label'];
+                            $forumTag->created_by = $user->id;
+                            $forumTag->save();
+                        }
+                    }
+                }
+
+                $response = $forum->load('category', 'creator', 'tags', 'allowedUsers');
+            });
 
             $this->flushCacheTag('forums');
 
@@ -215,6 +273,10 @@ class ForumsController extends Controller
             return response()->json(['message' => 'Not found'], 404);
         }
         $user = Auth::user();
+
+        if (!$this->userCanAccessForum($forum, $user)) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
 
         $comment = new ForumComments();
         $comment->forum_id = $forum->id;
@@ -262,6 +324,10 @@ class ForumsController extends Controller
             return response()->json(['message' => 'Not found'], 404);
         }
         $user = Auth::user();
+
+        if (!$this->userCanAccessForum($forum, $user)) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
 
         $forumReaction = ForumReactions::where([
             'forum_id' => $forum->id,
@@ -414,5 +480,61 @@ class ForumsController extends Controller
                 'message' => 'Failed to delete comment'
             ], 500);
         }
+    }
+    private function applyForumFilters($query, Request $request)
+    {
+        if ($request->has('banner')) {
+            $parsedBanner = filter_var($request->banner, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($parsedBanner !== null) {
+                $query->where('banner', $parsedBanner);
+            }
+        }
+
+        if ($request->has('closed')) {
+            $bool = filter_var($request->closed, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($bool !== null) {
+                $query->where('closed', $bool);
+            }
+        }
+
+        if ($request->title) {
+            $query->where('title', 'like', '%' . $request->title . '%');
+        }
+
+        if ($request->category) {
+            $query->where('category_id', $request->category);
+        }
+
+        if ($request->createdAt) {
+            try {
+                $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+                $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            } catch (\Exception $e) {
+                // Ignore invalid date
+            }
+        }
+
+        if ($request->limit) {
+            $query->take($request->limit);
+        }
+
+        return $query;
+    }
+
+    private function userCanAccessForum(Forums $forum, $user): bool
+    {
+        if ($forum->privacy !== 'private') {
+            return true;
+        }
+
+        if (!$user) {
+            return false;
+        }
+
+        $isAllowed = $forum->allowedUsers()->where('user_id', $user->id)->exists();
+        $isCreator = $forum->created_by === $user->id;
+
+        return $isAllowed || $isCreator;
     }
 }

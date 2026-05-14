@@ -11,32 +11,76 @@ use App\Models\SurveyAnswers;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\Traits\HasPermissionTrait;
+use App\Traits\CacheableTrait;
 
 class SurverysController extends Controller
 {
     use HasPermissionTrait;
+    use CacheableTrait;
     function getAll(Request $request)
     {
-        $user = Auth::user();
+        $viewer = Auth::id() ?? 'guest';
+        $cacheKey = $this->getCacheKey('surveys', 'list', $this->normalizeRequestParams($request->all()), $viewer);
+        $ttl = $this->getCacheTtl('surveys');
+
+        $surveys = $this->cacheRemember($cacheKey, 'surveys', $ttl, function () use ($request) {
+            $user = Auth::user();
+            $limit = $request->limit;
+            $privacy = $request->privacy;
+            $type = $request->type;
+
+            $query = Surveys::orderBy('created_at', 'DESC')
+                ->with('creator', 'answers')
+                ->when($privacy, function ($query) use ($privacy) {
+                    return $query->where('privacy', $privacy);
+                })
+                ->where(function ($q) use ($user) {
+                    $q->where('privacy', '!=', 'private')
+                        ->orWhere(function ($q2) use ($user) {
+                            if ($user) {
+                                $q2->where('privacy', 'private')
+                                    ->whereJsonContains('users', $user->id);
+                            } else {
+                                $q2->whereRaw('1 = 0');
+                            }
+                        });
+                });
+
+            if ($request->title) {
+                $query->where('title', 'like', '%' . $request->title . '%');
+            }
+
+            if ($type) {
+                $query->where('type', $request->type);
+            }
+
+            if ($request->createdAt) {
+                $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
+                $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            }
+
+            $query->when($limit, function ($query) use ($limit) {
+                return $query->take($limit);
+            });
+
+            return $query->get();
+        });
+
+        return response()->json($surveys, 200);
+    }
+
+    function getAllForDashboard(Request $request)
+    {
         $limit = $request->limit;
-        $privacy = $request->privacy;
         $type = $request->type;
+        $privacy = $request->privacy;
 
         $query = Surveys::orderBy('created_at', 'DESC')
             ->with('creator', 'answers')
             ->when($privacy, function ($query) use ($privacy) {
                 return $query->where('privacy', $privacy);
-            })
-            ->where(function ($q) use ($user) {
-                $q->where('privacy', '!=', 'private')
-                    ->orWhere(function ($q2) use ($user) {
-                        if ($user) {
-                            $q2->where('privacy', 'private')
-                                ->whereJsonContains('users', $user->id);
-                        } else {
-                            $q2->whereRaw('1 = 0');
-                        }
-                    });
             });
 
         if ($request->title) {
@@ -50,13 +94,12 @@ class SurverysController extends Controller
         if ($request->createdAt) {
             $startDate = Carbon::parse($request->createdAt)->setTimezone('UTC');
             $endDate = Carbon::parse($request->createdAt)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-
             $query->whereBetween('created_at', [$startDate, $endDate]);
         }
 
-        $query->when($limit, function ($query) use ($limit) {
-            return $query->take($limit);
-        });
+        if ($limit) {
+            $query->take($limit);
+        }
 
         $surveys = $query->get();
 
@@ -65,28 +108,34 @@ class SurverysController extends Controller
 
     function getLast()
     {
-        $user = Auth::user();
+        $viewer = Auth::id() ?? 'guest';
+        $cacheKey = $this->getCacheKey('surveys', 'latest', $viewer);
+        $ttl = $this->getCacheTtl('surveys');
 
-        $query = Surveys::where('closed', false)
-            ->when($user, function ($q) use ($user) {
-                $q->whereDoesntHave('answers', function ($subQ) use ($user) {
-                    $subQ->where('user_id', $user->id);
-                });
-            })
-            ->where(function ($q) use ($user) {
-                if ($user) {
-                    $q->where('privacy', 'public')
-                        ->orWhere(function ($q2) use ($user) {
-                            $q2->where('privacy', 'private')
-                                ->whereJsonContains('users', $user->id);
-                        });
-                } else {
-                    $q->where('privacy', 'public');
-                }
-            })
-            ->latest();
+        $survey = $this->cacheRemember($cacheKey, 'surveys', $ttl, function () {
+            $user = Auth::user();
 
-        $survey = $query->first();
+            $query = Surveys::where('closed', false)
+                ->when($user, function ($q) use ($user) {
+                    $q->whereDoesntHave('answers', function ($subQ) use ($user) {
+                        $subQ->where('user_id', $user->id);
+                    });
+                })
+                ->where(function ($q) use ($user) {
+                    if ($user) {
+                        $q->where('privacy', 'public')
+                            ->orWhere(function ($q2) use ($user) {
+                                $q2->where('privacy', 'private')
+                                    ->whereJsonContains('users', $user->id);
+                            });
+                    } else {
+                        $q->where('privacy', 'public');
+                    }
+                })
+                ->latest();
+
+            return $query->first();
+        });
 
         return response()->json($survey, 200);
     }
@@ -116,7 +165,10 @@ class SurverysController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        return response()->json($survey, 200);
+        $data = $survey->toArray();
+        $data['answersCount'] = (int) $survey->answers_count;
+
+        return response()->json($data, 200);
     }
 
     function statistics($id)
@@ -137,7 +189,7 @@ class SurverysController extends Controller
 
         try {
             $groupedSurveyAnswers = SurveyAnswers::where('survey_id', $id)->select([
-                DB::raw("MONTH(surveys.created_at) as month"),
+                DB::raw("DATE_FORMAT(survey_answers.created_at, '%Y-%m') as month"),
                 'surveys.type',
                 'survey_answers.answer',
                 DB::raw('COUNT(survey_answers.id) as count')
@@ -192,6 +244,8 @@ class SurverysController extends Controller
             $survey->users = $isPrivate ? $users : null;
             $survey->save();
 
+            $this->flushCacheTag('surveys');
+
             $response = $survey->load('creator');
 
             return response()->json($response, 200);
@@ -236,6 +290,8 @@ class SurverysController extends Controller
         $answer->user_id = $user->id;
         $answer->answer = $request->answer;
         $answer->save();
+
+        $this->flushCacheTag('surveys');
 
         $response = $survey->load('answers', 'creator', 'answers.user');
 
@@ -313,6 +369,8 @@ class SurverysController extends Controller
 
             $survey->save();
 
+            $this->flushCacheTag('surveys');
+
             $response = $survey->load('creator');
 
             return response()->json($response, 200);
@@ -343,6 +401,8 @@ class SurverysController extends Controller
         }
 
         $survey->delete();
+
+        $this->flushCacheTag('surveys');
 
         return response()->json('successfully deleted', 200);
     }

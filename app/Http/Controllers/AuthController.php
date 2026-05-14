@@ -2,29 +2,45 @@
 
 namespace App\Http\Controllers;
 
-use Carbon\Carbon;
-use App\Models\Users;
-use App\Models\LoginAudit;
 use App\Mail\ResetPassword;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use App\Models\LoginAudit;
+use App\Models\Users;
+use App\Repositories\Contracts\UserRepositoryInterface;
+use Carbon\Carbon;
 use Illuminate\Foundation\Auth\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rules\Password as PasswordRule;
+use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use App\Repositories\Contracts\UserRepositoryInterface;
 
 class AuthController extends Controller
 {
-
     private $userRepository;
+
     public function __construct(UserRepositoryInterface $userRepository)
     {
         $this->userRepository = $userRepository;
+    }
+
+    public static function passwordRules($required = true)
+    {
+        $rules = [
+            $required ? 'required' : 'nullable',
+            'string',
+            PasswordRule::min(8)
+                ->mixedCase()
+                ->numbers()
+                ->symbols(),
+        ];
+
+        return $rules;
     }
 
     public function login(Request $request)
@@ -39,12 +55,12 @@ class AuthController extends Controller
             'remoteIP' => $remoteIP,
             'status' => $token ? 'Success' : 'Error',
             'latitude' => $request['latitude'],
-            'longitude' => $request['longitude']
+            'longitude' => $request['longitude'],
         ]);
 
         $model->save();
 
-        if (!$token) {
+        if (! $token) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -53,11 +69,11 @@ class AuthController extends Controller
 
         $user = Auth::user();
 
-        $userActive = Users::find($user ->id);
+        $userActive = Users::find($user->id);
         $userActive->isConnected = true;
         $userActive->save();
 
-        $userClaimsFromRole =  DB::table('userRoles')
+        $userClaimsFromRole = DB::table('userRoles')
             ->select('roleClaims.claimType')
             ->leftJoin('roles', 'roles.id', '=', 'userRoles.roleId')
             ->leftJoin('roleClaims', 'roleClaims.roleId', '=', 'roles.id')
@@ -79,42 +95,45 @@ class AuthController extends Controller
 
         $user->claims = $userClaims;
 
-        $token = Auth::claims(array('claims' => $userClaims, 'email' => $user->email, 'userId' => $user->id))->attempt($credentials);
+        $token = Auth::claims(['claims' => $userClaims, 'email' => $user->email, 'userId' => $user->id])->attempt($credentials);
 
         return response()->json([
             'status' => 'success',
             'claims' => $userClaims,
             'user' => [
                 'id' => $user->id,
-                'firstName' =>  $user->firstName,
+                'firstName' => $user->firstName,
                 'lastName' => $user->lastName,
                 'email' => $user->email,
                 'userName' => $user->userName,
                 'avatar' => $user->avatar,
-                'phoneNumber' => $user->phoneNumber
+                'phoneNumber' => $user->phoneNumber,
             ],
             'authorisation' => [
                 'token' => $token,
                 'type' => 'bearer',
-            ]
+            ],
         ]);
     }
 
-    public function logout(Request $request) {
+    public function logout()
+    {
         try {
             // Get the current token
             $token = Auth::getToken();
-            
+
             if ($token) {
                 // Add token to blacklist
-                DB::table('jwt_blacklist')->insert([
-                    'token_hash' => hash('sha256', $token->get()),
-                    'expires_at' => now()->addMinutes(config('jwt.ttl', 60)),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                DB::table('jwt_blacklist')->updateOrInsert(
+                    ['token_hash' => hash('sha256', $token->get())],
+                    [
+                        'expires_at' => now()->addMinutes(config('jwt.ttl', 60)),
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
             }
-            
+
             // Update user connection status
             $user = Auth::user();
             if ($user) {
@@ -125,69 +144,110 @@ class AuthController extends Controller
                 }
             }
         } catch (\Exception $e) {
-            Log::error('Logout failed: ' . $e->getMessage());
+            Log::error('Logout failed: '.$e->getMessage());
+
             return response()->json(['error' => 'Logout failed'], 500);
         }
+
         return response()->json(['status' => 'success', 'message' => 'Successfully logged out']);
     }
 
     public function refresh()
     {
-        $userId = Auth::parseToken()->getPayload()->get('userId');
-        $token = Auth::getToken();
-        $user = $this->userRepository->findUser($userId);
+        try {
+            JWTAuth::manager()->setRefreshFlow();
 
-        $userClaimsFromRole =  DB::table('userRoles')
-            ->select('roleClaims.claimType')
-            ->leftJoin('roles', 'roles.id', '=', 'userRoles.roleId')
-            ->leftJoin('roleClaims', 'roleClaims.roleId', '=', 'roles.id')
-            ->where('userRoles.userId', '=', $user->id)
-            ->get()
-            ->toArray();
+            $payload = JWTAuth::parseToken()->getPayload();
+            $userId = $payload->get('userId');
 
-        $userIndividualClaims = DB::table('userClaims')
-            ->select('claimType')
-            ->where('userClaims.userId', '=', $user->id)
-            ->get()
-            ->toArray();
+            if (! $userId) {
+                return response()->json(['error' => 'Invalid token'], 401);
+            }
 
-        $allClaimsObjArray = array_merge($userClaimsFromRole, $userIndividualClaims);
+            $token = JWTAuth::getToken();
+            $tokenHash = hash('sha256', $token->get());
+            $blacklisted = DB::table('jwt_blacklist')
+                ->where('token_hash', $tokenHash)
+                ->exists();
 
-        $userClaims = array_map(function ($value) {
-            return $value->claimType;
-        }, $allClaimsObjArray);
+            if ($blacklisted) {
+                return response()->json(['error' => 'Token has been revoked'], 401);
+            }
 
-        $user->claims = $userClaims;
+            $user = $this->userRepository->findUser($userId);
 
-        $token = Auth::claims(array('claims' => $userClaims, 'email' => $user->email, 'userId' => $user->id))->refresh($token);
+            if (! $user) {
+                return response()->json(['error' => 'User not found'], 401);
+            }
 
-        return response()->json([
-            'status' => 'success',
-            'claims' => $userClaims,
-            'user' => [
-                'id' => $user->id,
-                'firstName' =>  $user->firstName,
-                'lastName' => $user->lastName,
-                'email' => $user->email,
-                'userName' => $user->userName,
-                'phoneNumber' => $user->phoneNumber
-            ],
-            'authorisation' => [
-                'token' => $token,
-                'type' => 'bearer',
-            ]
-        ]);
+            $userClaimsFromRole = DB::table('userRoles')
+                ->select('roleClaims.claimType')
+                ->leftJoin('roles', 'roles.id', '=', 'userRoles.roleId')
+                ->leftJoin('roleClaims', 'roleClaims.roleId', '=', 'roles.id')
+                ->where('userRoles.userId', '=', $user->id)
+                ->get()
+                ->toArray();
+
+            $userIndividualClaims = DB::table('userClaims')
+                ->select('claimType')
+                ->where('userClaims.userId', '=', $user->id)
+                ->get()
+                ->toArray();
+
+            $allClaimsObjArray = array_merge($userClaimsFromRole, $userIndividualClaims);
+
+            $userClaims = array_map(function ($value) {
+                return $value->claimType;
+            }, $allClaimsObjArray);
+
+            $user->claims = $userClaims;
+
+            $token = JWTAuth::claims(['claims' => $userClaims, 'email' => $user->email, 'userId' => $user->id])->refresh();
+
+            DB::table('jwt_blacklist')->insert([
+                'token_hash' => $tokenHash,
+                'expires_at' => now()->addMinutes(config('jwt.ttl', 60)),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'claims' => $userClaims,
+                'user' => [
+                    'id' => $user->id,
+                    'firstName' => $user->firstName,
+                    'lastName' => $user->lastName,
+                    'email' => $user->email,
+                    'userName' => $user->userName,
+                    'phoneNumber' => $user->phoneNumber,
+                    'avatar' => $user->avatar,
+                ],
+                'authorisation' => [
+                    'token' => $token,
+                    'type' => 'bearer',
+                ],
+            ]);
+
+        } catch (\PHPOpenSourceSaver\JWTAuth\Exceptions\TokenExpiredException $e) {
+            return response()->json(['error' => 'Token expired and cannot be refreshed'], 401);
+        } catch (\PHPOpenSourceSaver\JWTAuth\Exceptions\TokenBlacklistedException $e) {
+            return response()->json(['error' => 'Token has been revoked'], 401);
+        } catch (\PHPOpenSourceSaver\JWTAuth\Exceptions\JWTException $e) {
+            return response()->json(['error' => 'Invalid token'], 401);
+        }
     }
 
     public function testToken()
     {
         $token = Auth::parseToken();
+
         return $token->getPayload()->get('Peter');
     }
 
     public function getIp()
     {
-        foreach (array('HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_FORWARDED', 'HTTP_X_CLUSTER_CLIENT_IP', 'HTTP_FORWARDED_FOR', 'HTTP_FORWARDED', 'REMOTE_ADDR') as $key) {
+        foreach (['HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_FORWARDED', 'HTTP_X_CLUSTER_CLIENT_IP', 'HTTP_FORWARDED_FOR', 'HTTP_FORWARDED', 'REMOTE_ADDR'] as $key) {
             if (array_key_exists($key, $_SERVER) === true) {
                 foreach (explode(',', $_SERVER[$key]) as $ip) {
                     $ip = trim($ip); // just to be safe
@@ -197,17 +257,18 @@ class AuthController extends Controller
                 }
             }
         }
+
         return request()->ip(); // it will return the server IP if the client IP is not found using this method.
     }
 
-    function subscribe(Request $request)
+    public function subscribe(Request $request)
     {
 
         $user = Users::where('email', $request->email)->first();
 
-        if (!$user) {
+        if (! $user) {
 
-            $user = new Users();
+            $user = new Users;
             $user->firstName = $request->firstName;
             $user->lastName = $request->lastName;
             $user->email = $request->email;
@@ -218,13 +279,13 @@ class AuthController extends Controller
         }
 
         $credentials = $request->only('email', 'password');
-        $token = Auth::claims(array('claims' => 'guest', 'email' => $user->email, 'userId' => $user->id))->attempt($credentials);
+        $token = Auth::claims(['claims' => 'guest', 'email' => $user->email, 'userId' => $user->id])->attempt($credentials);
 
         return response([
             'status' => 'success',
             'user' => [
                 'id' => $user->id,
-                'firstName' =>  $user->firstName,
+                'firstName' => $user->firstName,
                 'lastName' => $user->lastName,
                 'email' => $user->email,
                 'userName' => $user->userName,
@@ -232,11 +293,11 @@ class AuthController extends Controller
             'authorisation' => [
                 'token' => $token,
                 'type' => 'bearer',
-            ]
+            ],
         ], 200);
     }
 
-    function forgot(Request $request)
+    public function forgot(Request $request)
     {
 
         $validator = Validator::make($request->all(), [
@@ -253,8 +314,8 @@ class AuthController extends Controller
         $verify = User::where('email', $request->all()['email'])->exists();
 
         if ($verify) {
-            $verify2 =  DB::table('password_resets')->where([
-                ['email', $request->all()['email']]
+            $verify2 = DB::table('password_resets')->where([
+                ['email', $request->all()['email']],
             ]);
 
             if ($verify2->exists()) {
@@ -264,15 +325,15 @@ class AuthController extends Controller
             $token = random_int(100000, 999999);
             $password_reset = DB::table('password_resets')->insert([
                 'email' => $request->all()['email'],
-                'token' =>  $token,
-                'created_at' => Carbon::now()
+                'token' => $token,
+                'created_at' => Carbon::now(),
             ]);
 
             if ($password_reset) {
                 Mail::to($request->all()['email'])->send(new ResetPassword($token));
 
                 return response()->json([
-                    'status' => 'error',
+                    'status' => 'success',
                     'message' => 'Please check your email for a 6 digit pin',
                 ], 200);
             }
@@ -304,7 +365,7 @@ class AuthController extends Controller
 
             $difference = Carbon::now()->diffInSeconds($check->first()->created_at);
             if ($difference > 3600) {
-                return new JsonResponse(['status' => 'error', 'message' => "Token Expired"], 400);
+                return new JsonResponse(['status' => 'error', 'message' => 'Token Expired'], 400);
             }
 
             DB::table('password_resets')->where([
@@ -312,19 +373,19 @@ class AuthController extends Controller
                 ['token', $request->token],
             ])->delete();
 
-            $token = Hash::make($request->token . ':' . $request->email);
+            $token = Hash::make($request->token.':'.$request->email);
 
             DB::table('password_resets')->insert([
                 'email' => $request->email,
-                'token' =>  $token,
-                'created_at' => Carbon::now()
+                'token' => $token,
+                'created_at' => Carbon::now(),
             ]);
 
             return new JsonResponse(
                 [
                     'status' => 'success',
-                    'message' => "You can now reset your password",
-                    'token' => $token
+                    'message' => 'You can now reset your password',
+                    'token' => $token,
                 ],
                 200
             );
@@ -332,7 +393,7 @@ class AuthController extends Controller
             return new JsonResponse(
                 [
                     'status' => 'error',
-                    'message' => "Invalid token"
+                    'message' => 'Invalid token',
                 ],
                 401
             );
@@ -343,7 +404,7 @@ class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'email' => ['required', 'string', 'email', 'max:255'],
-            'password' => ['required', 'string'],
+            'password' => self::passwordRules(),
             'token' => ['required', 'string'],
         ]);
 
@@ -356,7 +417,9 @@ class AuthController extends Controller
             ['token', $request->token],
         ]);
 
-        if (! $check->exists()) return new JsonResponse(['status' => 'error', 'message' => "Token Expired"], 400);
+        if (! $check->exists()) {
+            return new JsonResponse(['status' => 'error', 'message' => 'Token Expired'], 400);
+        }
 
         $check->delete();
 
@@ -366,7 +429,7 @@ class AuthController extends Controller
         return new JsonResponse(
             [
                 'status' => 'success',
-                'message' => "Your password has been reset"
+                'message' => 'Your password has been reset',
             ],
             200
         );
@@ -376,7 +439,7 @@ class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
-            'password' => ['required', 'string', 'min:8'],
+            'password' => self::passwordRules(),
             'username' => ['required', 'string', 'max:255', 'unique:users,userName'],
             'firstName' => ['nullable', 'string', 'max:255'],
             'lastName' => ['nullable', 'string', 'max:255'],
@@ -393,7 +456,7 @@ class AuthController extends Controller
             DB::beginTransaction();
 
             // Create new user
-            $user = new Users();
+            $user = new Users;
             $user->firstName = $request->firstName ?: '';
             $user->lastName = $request->lastName ?: '';
             $user->email = $request->email;
@@ -406,9 +469,9 @@ class AuthController extends Controller
 
             // Generate token with claims
             $token = Auth::claims([
-                'claims' => $userClaims, 
-                'email' => $user->email, 
-                'userId' => $user->id
+                'claims' => $userClaims,
+                'email' => $user->email,
+                'userId' => $user->id,
             ])->login($user);
 
             DB::commit();
@@ -422,22 +485,22 @@ class AuthController extends Controller
                     'lastName' => $user->lastName,
                     'email' => $user->email,
                     'userName' => $user->userName,
-                    'phoneNumber' => $user->phoneNumber
+                    'phoneNumber' => $user->phoneNumber,
                 ],
                 'authorisation' => [
                     'token' => $token,
                     'type' => 'bearer',
-                ]
+                ],
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Registration failed: ' . $e->getMessage());
+            Log::error('Registration failed: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Registration failed. Please try again later.',
             ], 422);
         }
     }
-
 }

@@ -6,7 +6,6 @@ use App\Models\Users;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 
 class UserSeeder extends Seeder
 {
@@ -22,7 +21,7 @@ class UserSeeder extends Seeder
             [
                 'id' => '4d2689d8-6f72-4aa6-911d-2414c1a751af',
                 'matricule' => '123456',
-                'direction'=> 'IT',
+                'direction' => 'IT',
                 'firstName' => 'super',
                 'lastName' => 'admin',
                 'isDeleted' => '0',
@@ -31,7 +30,7 @@ class UserSeeder extends Seeder
                 'email' => 'superadmin@gmail.com',
                 'normalizedEmail' => NULL,
                 'emailConfirmed' => '0',
-                'password' => Hash::make("123456Sa"),
+                'password' => Hash::make("123456Sa*"),
                 'securityStamp' => NULL,
                 'concurrencyStamp' => NULL,
                 'phoneNumber' => '00000000',
@@ -40,8 +39,6 @@ class UserSeeder extends Seeder
                 'lockoutEnd' => NULL,
                 'lockoutEnabled' => '0',
                 'accessFailedCount' => '0',
-                'matricule' => '123456', 
-                'direction' => 'IT'       
             ]
         ];
 

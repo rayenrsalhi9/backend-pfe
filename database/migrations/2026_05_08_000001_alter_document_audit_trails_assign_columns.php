@@ -1,0 +1,118 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     * 
+     * IMPORTANT: Put the application in maintenance mode or ensure no concurrent writes
+     * to documentAuditTrails occur before running this migration to prevent data inconsistency
+     * during foreign key removal and column modification.
+     */
+    public function up()
+    {
+        $foreignKeys = DB::select("
+            SELECT CONSTRAINT_NAME, COLUMN_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'documentAuditTrails'
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+              AND COLUMN_NAME IN ('assignToUserId', 'assignToRoleId')
+        ");
+
+        foreach ($foreignKeys as $fk) {
+            DB::statement("ALTER TABLE `documentAuditTrails` DROP FOREIGN KEY `{$fk->CONSTRAINT_NAME}`");
+        }
+
+        $columns = DB::select("
+            SELECT COLUMN_NAME, COLUMN_TYPE
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'documentAuditTrails'
+              AND COLUMN_NAME IN ('assignToUserId', 'assignToRoleId')
+        ");
+
+        foreach ($columns as $col) {
+            DB::statement("ALTER TABLE `documentAuditTrails` MODIFY COLUMN `{$col->COLUMN_NAME}` TEXT NULL");
+        }
+    }
+
+    public function down()
+    {
+        $badRows = DB::select("
+            SELECT id, assignToUserId, assignToRoleId
+            FROM documentAuditTrails
+            WHERE (LENGTH(assignToUserId) > 36 OR assignToUserId LIKE '%,%')
+               OR (LENGTH(assignToRoleId) > 36 OR assignToRoleId LIKE '%,%')
+            LIMIT 1
+        ");
+
+        if (!empty($badRows)) {
+            throw new RuntimeException(
+                'Cannot roll back: documentAuditTrails contains comma-separated or oversized UUID values ' .
+                'in assignToUserId/assignToRoleId (id=' . $badRows[0]->id . '). ' .
+                'Clean up the data before rolling back this migration.'
+            );
+        }
+
+        $orphanUsers = DB::select("
+            SELECT DISTINCT t.assignToUserId
+            FROM documentAuditTrails t
+            WHERE t.assignToUserId IS NOT NULL
+              AND t.assignToUserId != ''
+              AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = t.assignToUserId)
+        ");
+
+        if (!empty($orphanUsers)) {
+            $allIds = array_column($orphanUsers, 'assignToUserId');
+            $count = count($allIds);
+            $truncatedIds = implode(', ', array_slice($allIds, 0, 10));
+            throw new RuntimeException(
+                "Cannot roll back: $count orphan assignToUserId values (showing first 10): $truncatedIds in documentAuditTrails " .
+                "do not exist in users table. Fix data before rolling back."
+            );
+        }
+
+        $orphanRoles = DB::select("
+            SELECT DISTINCT t.assignToRoleId
+            FROM documentAuditTrails t
+            WHERE t.assignToRoleId IS NOT NULL
+              AND t.assignToRoleId != ''
+              AND NOT EXISTS (SELECT 1 FROM roles r WHERE r.id = t.assignToRoleId)
+        ");
+
+        if (!empty($orphanRoles)) {
+            $allIds = array_column($orphanRoles, 'assignToRoleId');
+            $count = count($allIds);
+            $truncatedIds = implode(', ', array_slice($allIds, 0, 10));
+            throw new RuntimeException(
+                "Cannot roll back: $count orphan assignToRoleId values (showing first 10): $truncatedIds in documentAuditTrails " .
+                "do not exist in roles table. Fix data before rolling back."
+            );
+        }
+
+        // MySQL implicitly commits before ALTER TABLE, so this transaction is best-effort and cannot fully roll back column type changes if foreign-key creation fails.
+        DB::transaction(function () {
+            $columns = DB::select("
+                SELECT COLUMN_NAME, COLUMN_TYPE
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'documentAuditTrails'
+                  AND COLUMN_NAME IN ('assignToUserId', 'assignToRoleId')
+            ");
+
+            foreach ($columns as $col) {
+                DB::statement("ALTER TABLE `documentAuditTrails` MODIFY COLUMN `{$col->COLUMN_NAME}` CHAR(36) NULL");
+            }
+
+            Schema::table('documentAuditTrails', function ($table) {
+                $table->foreign('assignToUserId')->references('id')->on('users');
+                $table->foreign('assignToRoleId')->references('id')->on('roles');
+            });
+        });
+    }
+};

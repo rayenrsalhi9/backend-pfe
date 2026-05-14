@@ -20,7 +20,7 @@ class DocumentRolePermissions extends Model
     const UPDATED_AT = 'modifiedDate';
 
     protected $fillable = [
-        'documentId', 'roleId','isTimeBound', 'startDate','endDate','isAllowDownload','createdBy',
+        'documentId', 'roleId','isAllowDownload','createdBy',
         'modifiedBy', 'isDeleted'
     ];
 

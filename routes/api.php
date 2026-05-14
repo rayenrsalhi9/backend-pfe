@@ -61,12 +61,12 @@ Route::get('document/{id}/office-viewer', [DocumentController::class, 'officevie
 Route::get('document/{id}/officeviewer', [DocumentController::class, 'officeviewer']);
 Route::get('/company-profile', [CompanyProfileController::class, 'getCompanyProfile']);
 
+Route::post('auth/refresh', [AuthController::class, 'refresh']);
+
 Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::post('/company-profile', [CompanyProfileController::class, 'updateCompanyProfile'])
         ->middleware('can:updateCompanyProfile');
-
-    Route::post('auth/refresh', [AuthController::class, 'refresh']);
 
     Route::post('pusher/auth', function (Request $request) {
 
@@ -80,12 +80,12 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
         $cleanChannelName = preg_replace('/^(private-|presence-)/', '', $channelName);
 
-        if (preg_match('/^App\.Models\.User\.(\d+)$/', $cleanChannelName, $matches)) {
-            $channelUserId = (int) $matches[1];
-            if ((int) $user->id !== $channelUserId) {
+        if (preg_match('/^App\.Models\.User\.([a-zA-Z0-9-]+)$/', $cleanChannelName, $matches)) {
+            $channelUserId = $matches[1];
+            if ($user->id !== $channelUserId) {
                 return response()->json(['error' => 'Forbidden'], 403);
             }
-        } elseif (preg_match('/^conversation\.(\d+)$/', $cleanChannelName, $matches)) {
+        } elseif (preg_match('/^conversation\.([a-zA-Z0-9-]+)$/', $cleanChannelName, $matches)) {
             $conversationId = $matches[1];
             $conversation = \App\Models\Conversation::find($conversationId);
             if (!$conversation || !$conversation->users()->where('user_id', $user->id)->exists()) {
@@ -172,9 +172,17 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         Route::get('/dashboard/yearly-reminder/{month}/{year}', [DashboardController::class, 'getYearlyReminders']);
         Route::get('/dashboard/one-time-reminder/{month}/{year}', [DashboardController::class, 'getOneTimeReminder']);
         Route::get('/dashboard/get-document-by-category', [DocumentController::class, 'getDocumentsByCategoryQuery']);
-        Route::get('/documents/transactions', [DocumentAuditTrailController::class, 'documentsTransactions']);
-        Route::get('/documents/extension', [DocumentController::class, 'countByExtension']);
-        Route::get('/user', [UserController::class, 'index']);
+        Route::get('/dashboard/transactions', [DocumentAuditTrailController::class, 'documentsTransactions']);
+        Route::get('/dashboard/extension', [DocumentController::class, 'countByExtension']);
+        // Dashboard content endpoints - full access for authorized users
+        Route::get('/dashboard/blogs', [BlogsController::class, 'getAllForDashboard'])
+            ->middleware('hasToken:BLOG_VIEW_BLOGS');
+        Route::get('/dashboard/forums', [ForumsController::class, 'getAllForDashboard'])
+            ->middleware('hasToken:FORUM_VIEW_FORUMS');
+        Route::get('/dashboard/articles', [ArticlesController::class, 'getAllForDashboard'])
+            ->middleware('hasToken:ARTICLE_VIEW_ARTICLES');
+        Route::get('/dashboard/surveys', [SurverysController::class, 'getAllForDashboard'])
+            ->middleware('hasToken:SURVEY_VIEW_SURVEYS');
     });
 
     Route::get('/category/dropdown', [CategoryController::class, 'getAllCategoriesForDropDown']);
@@ -269,26 +277,14 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
     });
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::post('/document-role-permission', [DocumentPermissionController::class, 'addDocumentRolePermission']);
-    });
-
-    Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
         Route::post('/document-user-permission', [DocumentPermissionController::class, 'addDocumentUserPermission']);
-    });
-
-    Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::post('/document-role-permission/multiple', [DocumentPermissionController::class, 'multipleDocumentsToUsersAndRoles']);
     });
 
     Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
         Route::delete('/document-user-permission/{id}', [DocumentPermissionController::class, 'deleteDocumentUserPermission']);
     });
 
-    Route::group(['middleware' => ['hasToken:ALL_DOCUMENTS_SHARE_DOCUMENT,ASSIGNED_DOCUMENTS_SHARE_DOCUMENT']], function () {
-        Route::delete('/document-role-permission/{id}', [DocumentPermissionController::class, 'deleteDocumentRolePermission']);
-    });
-
-    Route::get('/document/{id}/is-download-flag/is-permission/{isPermission}', [DocumentPermissionController::class, 'getIsDownloadFlag']);
+    Route::get('/document/{id}/is-download-flag', [DocumentPermissionController::class, 'getIsDownloadFlag']);
 
     Route::get('/document-version/{documentId}', [DocumentVersionController::class, 'index']);
 
@@ -320,15 +316,19 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         Route::get('/reminder/all', [ReminderController::class, 'getReminders']);
     });
 
+    // Document endpoints for dashboard
+    // TODO: Deprecated aliases of /dashboard/extension and /dashboard/transactions — remove in next major version
+    Route::get('/document/extension', [DocumentController::class, 'countByExtension'])
+        ->middleware('hasToken:DASHBOARD_VIEW_DASHBOARD');
+    Route::get('/document/transactions', [DocumentAuditTrailController::class, 'documentsTransactions'])
+        ->middleware('hasToken:DASHBOARD_VIEW_DASHBOARD');
+
     Route::middleware('hasToken:REMINDER_CREATE_REMINDER')->group(function () {
         Route::post('/reminder', [ReminderController::class, 'addReminder']);
     });
 
     Route::middleware('hasToken:REMINDER_EDIT_REMINDER')->group(function () {
         Route::get('/reminder/{id}', [ReminderController::class, 'edit']);
-    });
-
-    Route::middleware('hasToken:REMINDER_EDIT_REMINDER')->group(function () {
         Route::put('/reminder/{id}', [ReminderController::class, 'updateReminder']);
     });
 
@@ -338,11 +338,7 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
 
     Route::get('/reminder/all/current-user', [ReminderController::class, 'getReminderForLoginUser']);
 
-    Route::get('/reminder/all/currentuser', [ReminderController::class, 'getReminderForLoginUser']);
-
     Route::delete('/reminder/current-user/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
-
-    Route::delete('/reminder/currentuser/{id}', [ReminderController::class, 'deleteReminderCurrentUser']);
 
     Route::get('/reminder/calendar-events/{month}/{year}', [ReminderController::class, 'getCalendarEvents']);
 
@@ -374,8 +370,9 @@ Route::middleware(['auth', 'checkBlacklist'])->group(function () {
         Route::post('create', 'conversationCreate');
 
         Route::post('message', 'messageSend');
-        Route::put('message/{id}/seen', 'messageSeen');
-        Route::put('message/{id}/reaction', 'messageReaction');
+        Route::put('message/{id}/seen', [ConversationController::class, 'messageSeen']);
+        Route::put('message/{id}/delivered', [ConversationController::class, 'messageDelivered']);
+        Route::put('message/{id}/reaction', [ConversationController::class, 'messageReaction']);
     });
 });
 

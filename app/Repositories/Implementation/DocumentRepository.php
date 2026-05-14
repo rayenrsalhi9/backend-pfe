@@ -5,11 +5,9 @@ namespace App\Repositories\Implementation;
 use App\Models\DocumentMetaDatas;
 use App\Models\DocumentAuditTrails;
 use App\Models\DocumentOperationEnum;
-use App\Models\DocumentRolePermissions;
 use App\Models\Documents;
 use App\Models\DocumentUserPermissions;
 use App\Models\UserNotifications;
-use App\Models\UserRoles;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -45,83 +43,56 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
 
     public function getDocuments($attributes, $includeCreatorEmail = false)
     {
-        $cacheKey = $this->getCacheKey('documents', 'list', md5(json_encode((array)$attributes)), $includeCreatorEmail);
-        $ttl = $this->getCacheTtl('documents');
+        $userId = Auth::parseToken()->getPayload()->get('userId');
 
-        return $this->cacheRemember($cacheKey, 'documents', $ttl, function () use ($attributes, $includeCreatorEmail) {
-            $selectColumns = ['documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName', DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName")];
-        
-            if ($includeCreatorEmail) {
-                $selectColumns[] = 'users.email as createdByEmail';
-            }
+        $selectColumns = ['documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName',
+            DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName")
+        ];
+    
+        if ($includeCreatorEmail) {
+            $selectColumns[] = 'users.email as createdByEmail';
+        }
 
-            $query = Documents::select($selectColumns)
-                ->join('categories', 'documents.categoryId', '=', 'categories.id')
-                ->join('users', 'documents.createdBy', '=', 'users.id');
-
-            $orderByArray = explode(' ', $attributes->orderBy);
-            $orderBy = $orderByArray[0];
-            $direction = $orderByArray[1] ?? 'asc';
-
-            if ($orderBy == 'categoryName') {
-                $query = $query->orderBy('categories.name', $direction);
-            } else if ($orderBy == 'name') {
-                $query = $query->orderBy('documents.name', $direction);
-            } else if ($orderBy == 'createdDate') {
-                $query = $query->orderBy('documents.createdDate', $direction);
-            } else if ($orderBy == 'createdBy') {
-                $query = $query->orderBy('users.firstName', $direction);
-            }
-
-            if ($attributes->categoryId) {
-                $query = $query->where('categoryId', $attributes->categoryId);
-            }
-
-            if ($attributes->name) {
-                $query = $query->where('documents.name', 'like', '%' . $attributes->name . '%')
-                    ->orWhere('documents.description', 'like', '%' . $attributes->name . '%');
-            }
-
-            if ($attributes->metaTags) {
-                $metaTags = $attributes->metaTags;
-                $query = $query->whereExists(function ($query) use ($metaTags) {
-                    $query->select(DB::raw(1))
-                        ->from('documentMetaDatas')
-                        ->whereRaw('documentMetaDatas.documentId = documents.id')
-                        ->where('documentMetaDatas.metatag', 'like', '%' . $metaTags . '%');
-                });
-            }
-
-            if ($attributes->createDateString) {
-
-                $startDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC');
-                $endDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-
-                $query = $query->whereBetween('documents.createdDate', [$startDate, $endDate]);
-            }
-
-        $results = $query->skip($attributes->skip)->take($attributes->pageSize)->get();
-
-            return $results;
-        });
-    }
-
-    public function getDocumentsCount($attributes)
-    {
-        $query = Documents::query()
+        $query = Documents::select($selectColumns)
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
             ->join('users', 'documents.createdBy', '=', 'users.id');
 
-        if ($attributes->categoryId) {
+        $bindings = [$userId];
+        $isAllowDownloadSql = "(CASE WHEN EXISTS (
+            SELECT 1 FROM documentUserPermissions
+            WHERE documentUserPermissions.documentId = documents.id
+            AND documentUserPermissions.userId = ?
+            AND documentUserPermissions.isAllowDownload = 1
+        ) THEN 1 ELSE 0 END) as isAllowDownload";
+
+        $query->selectRaw($isAllowDownloadSql, $bindings);
+
+        $orderByArray = explode(' ', $attributes->orderBy);
+        $orderBy = $orderByArray[0];
+        $direction = $orderByArray[1] ?? 'asc';
+
+        if ($orderBy == 'categoryName') {
+            $query = $query->orderBy('categories.name', $direction);
+        } else if ($orderBy == 'name') {
+            $query = $query->orderBy('documents.name', $direction);
+        } else if ($orderBy == 'createdDate') {
+            $query = $query->orderBy('documents.createdDate', $direction);
+        } else if ($orderBy == 'createdBy') {
+            $query = $query->orderBy('users.firstName', $direction);
+        }
+
+        if (property_exists($attributes, 'categoryId') && $attributes->categoryId) {
             $query = $query->where('categoryId', $attributes->categoryId);
         }
 
-        if ($attributes->name) {
-            $query = $query->where('documents.name', 'like', '%' . $attributes->name . '%')
-                ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+        if (property_exists($attributes, 'name') && $attributes->name) {
+            $query = $query->where(function ($q) use ($attributes) {
+                $q->where('documents.name', 'like', '%' . $attributes->name . '%')
+                  ->orWhere('documents.description', 'like', '%' . $attributes->name . '%');
+            });
         }
 
-        if ($attributes->metaTags) {
+        if (property_exists($attributes, 'metaTags') && $attributes->metaTags) {
             $metaTags = $attributes->metaTags;
             $query = $query->whereExists(function ($query) use ($metaTags) {
                 $query->select(DB::raw(1))
@@ -131,14 +102,52 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             });
         }
 
-        if ($attributes->createDateString) {
-            $date = date('Y-m-d', strtotime(str_replace('/', '-', $attributes->createDateString)));
+        if (property_exists($attributes, 'createDateString') && $attributes->createDateString) {
+            $this->applyCreateDateFilter($query, $attributes);
+        }
 
-            $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-            $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
+        $results = $query->skip($attributes->skip)->take($attributes->pageSize)->get();
 
-            $query = $query->whereDate('documents.createdDate', '>=', $startDate)
-                ->whereDate('documents.createdDate', '<=', $endDate);
+        return $results;
+    }
+
+    private function applyCreateDateFilter($query, $attributes)
+    {
+        $startDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC');
+        $endDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
+
+        $query->whereBetween('documents.createdDate', [$startDate, $endDate]);
+    }
+
+    public function getDocumentsCount($attributes)
+    {
+        $query = Documents::query()
+            ->join('categories', 'documents.categoryId', '=', 'categories.id')
+            ->join('users', 'documents.createdBy', '=', 'users.id');
+
+        if (property_exists($attributes, 'categoryId') && $attributes->categoryId) {
+            $query = $query->where('categoryId', $attributes->categoryId);
+        }
+
+        if (property_exists($attributes, 'name') && $attributes->name) {
+            $query = $query->where(function ($q) use ($attributes) {
+                $q->where('documents.name', 'like', '%' . $attributes->name . '%')
+                  ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+            });
+        }
+
+        if (property_exists($attributes, 'metaTags') && $attributes->metaTags) {
+            $metaTags = $attributes->metaTags;
+            $query = $query->whereExists(function ($query) use ($metaTags) {
+                $query->select(DB::raw(1))
+                    ->from('documentMetaDatas')
+                    ->whereRaw('documentMetaDatas.documentId = documents.id')
+                    ->where('documentMetaDatas.metatag', 'like', '%' . $metaTags . '%');
+            });
+        }
+
+        if (property_exists($attributes, 'createDateString') && $attributes->createDateString) {
+            $this->applyCreateDateFilter($query, $attributes);
         }
 
         $count = $query->count();
@@ -161,101 +170,53 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             $this->resetModel();
             $result = $this->parseResult($model);
 
-            foreach (json_decode($metaDatas) as $metaTag) {
-                DocumentMetaDatas::create(array(
-                    'documentId' =>   $result->id,
-                    'metatag' =>  $metaTag->metatag,
-                ));
-            }
-
-            $documentRolePermissions = json_decode($request->documentRolePermissions);
-            $rolePermissionsArray = array();
-            foreach ($documentRolePermissions as $docuemntrole) {
-                $startDate = '';
-                $endDate = '';
-                if ($docuemntrole->isTimeBound) {
-                    $startdate1 = date('Y-m-d', strtotime(str_replace('/', '-', $docuemntrole->startDate)));
-                    $enddate1 = date('Y-m-d', strtotime(str_replace('/', '-', $docuemntrole->endDate)));
-                    $startDate = Carbon::createFromFormat('Y-m-d', $startdate1)->startOfDay();
-                    $endDate = Carbon::createFromFormat('Y-m-d', $enddate1)->endOfDay();
-                }
-
-                DocumentRolePermissions::create([
-                    'documentId' => $result->id,
-                    'endDate' => $endDate  ?? '',
-                    'isAllowDownload' => $docuemntrole->isAllowDownload,
-                    'isTimeBound' => $docuemntrole->isTimeBound,
-                    'roleId' => $docuemntrole->roleId,
-                    'startDate' => $startDate ?? ''
-                ]);
-
-                DocumentAuditTrails::create([
-                    'documentId' => $result->id,
-                    'createdDate' =>  Carbon::now(),
-                    'operationName' => DocumentOperationEnum::Add_Permission->value,
-                    'assignToRoleId' => $docuemntrole->roleId
-                ]);
-
-                $userIds = UserRoles::select('userId')
-                    ->where('roleId', $docuemntrole->roleId)
-                    ->get();
-
-                foreach ($userIds as $userIdObject) {
-                    array_push($rolePermissionsArray, [
-                        'documentId' => $result->id,
-                        'userId' => $userIdObject->userId
-                    ]);
+            $decodedMetaDatas = json_decode($metaDatas);
+            if (is_array($decodedMetaDatas)) {
+                foreach ($decodedMetaDatas as $metaTag) {
+                    DocumentMetaDatas::create(array(
+                        'documentId' =>   $result->id,
+                        'metatag' =>  $metaTag->metatag,
+                    ));
                 }
             }
+
+            $assignedUserIds = array();
 
             $documentUserPermissions = json_decode($request->documentUserPermissions);
-            foreach ($documentUserPermissions as $docuemntUser) {
-                $startDate = '';
-                $endDate = '';
-                if ($docuemntUser->isTimeBound) {
-                    $startdate1 = date('Y-m-d', strtotime(str_replace('/', '-', $docuemntUser->startDate)));
-                    $enddate1 = date('Y-m-d', strtotime(str_replace('/', '-', $docuemntUser->endDate)));
-                    $startDate = Carbon::createFromFormat('Y-m-d', $startdate1)->startOfDay();
-                    $endDate = Carbon::createFromFormat('Y-m-d', $enddate1)->endOfDay();
+            if (is_array($documentUserPermissions)) {
+                foreach ($documentUserPermissions as $docuemntUser) {
+                    DocumentUserPermissions::create([
+                        'documentId' => $result->id,
+                        'isAllowDownload' => $docuemntUser->isAllowDownload ?? false,
+                        'userId' => $docuemntUser->userId,
+                    ]);
+
+                    $assignedUserIds[] = $docuemntUser->userId;
                 }
+            }
 
-                DocumentUserPermissions::create([
-                    'documentId' => $result->id,
-                    'endDate' => $endDate  ?? '',
-                    'isAllowDownload' => $docuemntUser->isAllowDownload,
-                    'isTimeBound' => $docuemntUser->isTimeBound,
-                    'userId' => $docuemntUser->userId,
-                    'startDate' => $startDate ?? ''
-                ]);
-
+            if (!empty($assignedUserIds)) {
                 DocumentAuditTrails::create([
                     'documentId' => $result->id,
                     'createdDate' =>  Carbon::now(),
                     'operationName' => DocumentOperationEnum::Add_Permission->value,
-                    'assignToUserId' => $docuemntUser->userId
-                ]);
-
-
-                array_push($rolePermissionsArray, [
-                    'documentId' => $result->id,
-                    'userId' => $docuemntUser->userId
+                    'assignToUserId' => implode(',', $assignedUserIds)
                 ]);
             }
 
-
-            $rolePermissions = array_unique($rolePermissionsArray, SORT_REGULAR);
-            foreach ($rolePermissions as $rolePermission) {
+            foreach ($assignedUserIds as $userId) {
                 UserNotifications::create([
                     'documentId' => $result->id,
-                    'userId' => $rolePermission['userId']
+                    'userId' => $userId,
+                    'type' => 'document'
                 ]);
             }
 
             $userId = Auth::parseToken()->getPayload()->get('userId');
 
-            $array = array_filter($documentUserPermissions, function ($item) use ($userId) {
+            $array = is_array($documentUserPermissions) ? array_filter($documentUserPermissions, function ($item) use ($userId) {
                 return $item->userId == $userId;
-            });
+            }) : [];
 
             if (count($array) == 0) {
                 DocumentUserPermissions::create(array(
@@ -298,6 +259,93 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
                 ));
             }
 
+            $requestedUserPermissions = $request->input('documentUserPermissions', []);
+            if (!is_array($requestedUserPermissions)) { $requestedUserPermissions = []; }
+
+            $requestedUserIds = array_column($requestedUserPermissions, 'userId');
+
+            $existingUserPermissions = DocumentUserPermissions::where('documentId', '=', $id)->get();
+            $existingUserIds = $existingUserPermissions->pluck('userId')->toArray();
+
+            $userIdsToRemove = array_diff($existingUserIds, $requestedUserIds);
+            $userIdsToAdd = array_diff($requestedUserIds, $existingUserIds);
+
+            if (!empty($userIdsToRemove)) {
+                DocumentUserPermissions::where('documentId', '=', $id)
+                    ->whereIn('userId', $userIdsToRemove)
+                    ->delete();
+
+                DocumentAuditTrails::create([
+                    'documentId' => $id,
+                    'createdDate' => Carbon::now(),
+                    'operationName' => DocumentOperationEnum::Remove_Permission->value,
+                    'assignToUserId' => implode(',', $userIdsToRemove)
+                ]);
+            }
+
+            if (empty($requestedUserIds)) {
+                UserNotifications::where('documentId', $id)
+                    ->where('type', 'document')
+                    ->delete();
+            } else {
+                UserNotifications::where('documentId', $id)
+                    ->where('type', 'document')
+                    ->whereNotIn('userId', $requestedUserIds)
+                    ->delete();
+            }
+
+            $userIdsToKeep = array_intersect($existingUserIds, $requestedUserIds);
+            if (!empty($userIdsToKeep)) {
+                $requestByUserId = array_column($requestedUserPermissions, null, 'userId');
+                foreach ($userIdsToKeep as $keepUserId) {
+                    $newDownloadFlag = $requestByUserId[$keepUserId]['isAllowDownload'] ?? false;
+                    DocumentUserPermissions::where('documentId', $id)
+                        ->where('userId', $keepUserId)
+                        ->update(['isAllowDownload' => $newDownloadFlag]);
+                }
+            }
+
+            if (!empty($userIdsToAdd)) {
+                foreach ($requestedUserPermissions as $userPermission) {
+                    if (!in_array($userPermission['userId'], $userIdsToAdd)) {
+                        continue;
+                    }
+
+                    DocumentUserPermissions::create([
+                        'documentId' => $id,
+                        'userId' => $userPermission['userId'],
+                        'isAllowDownload' => $userPermission['isAllowDownload'] ?? false,
+                    ]);
+
+                    UserNotifications::create([
+                        'documentId' => $id,
+                        'userId' => $userPermission['userId'],
+                        'type' => 'document'
+                    ]);
+                }
+
+                DocumentAuditTrails::create([
+                    'documentId' => $id,
+                    'createdDate' => Carbon::now(),
+                    'operationName' => DocumentOperationEnum::Add_Permission->value,
+                    'assignToUserId' => implode(',', $userIdsToAdd)
+                ]);
+            }
+
+            $currentUserId = Auth::parseToken()->getPayload()->get('userId');
+
+            $currentUserHasPermission = DocumentUserPermissions::where('documentId', '=', $id)
+                ->where('userId', '=', $currentUserId)
+                ->exists();
+
+            if (!$currentUserHasPermission) {
+                DocumentUserPermissions::create([
+                    'documentId' => $id,
+                    'userId' => $currentUserId,
+                    'isAllowDownload' => true
+                ]);
+            }
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
@@ -318,19 +366,19 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
     public function assignedDocuments($attributes, $includeCreatorEmail = false)
     {
         $userId = Auth::parseToken()->getPayload()->get('userId');
-        $userRoles = UserRoles::select('roleId')
-            ->where('userId', $userId)
-            ->get();
-            
+
+        $isAllowDownloadSql = "(CASE WHEN EXISTS (
+            SELECT 1 FROM documentUserPermissions
+            WHERE documentUserPermissions.documentId = documents.id
+            AND documentUserPermissions.userId = ?
+            AND documentUserPermissions.isAllowDownload = 1
+        ) THEN 1 ELSE 0 END) as isAllowDownload";
+
+        $isAllowBindings = [$userId];
+
         $selectColumns = [
             'documents.id', 'documents.name', 'documents.url', 'documents.createdDate', 'documents.description', 'categories.id as categoryId', 'categories.name as categoryName',
             DB::raw("CONCAT(users.firstName,' ', users.lastName) as createdByName"),
-            DB::raw("(SELECT max(documentUserPermissions.endDate) FROM documentUserPermissions
-                     WHERE documentUserPermissions.documentId = documents.id and documentUserPermissions.isTimeBound =1
-                     GROUP BY documentUserPermissions.documentId) as maxUserPermissionEndDate"),
-            DB::raw("(SELECT max(documentRolePermissions.endDate) FROM documentRolePermissions
-                     WHERE documentRolePermissions.documentId = documents.id and documentRolePermissions.isTimeBound =1
-                     GROUP BY documentRolePermissions.documentId) as maxRolePermissionEndDate"),
         ];
         
         if ($includeCreatorEmail) {
@@ -338,41 +386,15 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
         }
         
         $query = Documents::select($selectColumns)
+            ->selectRaw($isAllowDownloadSql, $isAllowBindings)
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
             ->join('users', 'documents.createdBy', '=', 'users.id')
-            ->where(function ($query) use ($userId, $userRoles) {
+            ->where(function ($query) use ($userId) {
                 $query->whereExists(function ($query) use ($userId) {
                     $query->select(DB::raw(1))
                         ->from('documentUserPermissions')
                         ->whereRaw('documentUserPermissions.documentId = documents.id')
-                        ->where('documentUserPermissions.userId', '=', $userId)
-                        ->where(function ($query) {
-                            $query->where('documentUserPermissions.isTimeBound', '=', '0')
-                                ->orWhere(function ($query) {
-                                    $date = date('Y-m-d');
-                                    $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-                                    $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-                                    $query->where('documentUserPermissions.isTimeBound', '=', '1')
-                                        ->whereDate('documentUserPermissions.startDate', '<=', $startDate)
-                                        ->whereDate('documentUserPermissions.endDate', '>=', $endDate);
-                                });
-                        });
-                })->orWhereExists(function ($query) use ($userRoles) {
-                    $query->select(DB::raw(1))
-                        ->from('documentRolePermissions')
-                        ->whereRaw('documentRolePermissions.documentId = documents.id')
-                        ->whereIn('documentRolePermissions.roleId', $userRoles)
-                        ->where(function ($query) {
-                            $query->where('documentRolePermissions.isTimeBound', '=', '0')
-                                ->orWhere(function ($query) {
-                                    $date = date('Y-m-d');
-                                    $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-                                    $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-                                    $query->where('documentRolePermissions.isTimeBound', '=', '1')
-                                        ->whereDate('documentRolePermissions.startDate', '<=', $startDate)
-                                        ->whereDate('documentRolePermissions.endDate', '>=', $endDate);
-                                });
-                        });
+                        ->where('documentUserPermissions.userId', '=', $userId);
                 });
             });
 
@@ -390,16 +412,18 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             $query = $query->orderBy('users.firstName', $direction);
         }
 
-        if ($attributes->categoryId) {
+        if (property_exists($attributes, 'categoryId') && $attributes->categoryId) {
             $query = $query->where('categoryId', $attributes->categoryId);
         }
 
-        if ($attributes->name) {
-            $query = $query->where('documents.name', 'like', '%' . $attributes->name . '%')
-                ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+        if (property_exists($attributes, 'name') && $attributes->name) {
+            $query = $query->where(function ($q) use ($attributes) {
+                $q->where('documents.name', 'like', '%' . $attributes->name . '%')
+                  ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+            });
         }
 
-        if ($attributes->metaTags) {
+        if (property_exists($attributes, 'metaTags') && $attributes->metaTags) {
             $metaTags = $attributes->metaTags;
             $query = $query->whereExists(function ($query) use ($metaTags) {
                 $query->select(DB::raw(1))
@@ -409,12 +433,8 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             });
         }
 
-        if ($attributes->createDateString) {
-
-            $startDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC');
-            $endDate = Carbon::parse($attributes->createDateString)->setTimezone('UTC')->addDays(1)->addSeconds(-1);
-
-            $query = $query->whereBetween('documents.createdDate', [$startDate, $endDate]);
+        if (property_exists($attributes, 'createDateString') && $attributes->createDateString) {
+            $this->applyCreateDateFilter($query, $attributes);
         }
 
         $results = $query->skip($attributes->skip)->take($attributes->pageSize)->get();
@@ -425,58 +445,30 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
     public function assignedDocumentsCount($attributes)
     {
         $userId = Auth::parseToken()->getPayload()->get('userId');
-        $userRoles = UserRoles::select('roleId')
-            ->where('userId', $userId)
-            ->get();
         $query = Documents::query()
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
             ->join('users', 'documents.createdBy', '=', 'users.id')
-            ->where(function ($query) use ($userId, $userRoles) {
+            ->where(function ($query) use ($userId) {
                 $query->whereExists(function ($query) use ($userId) {
                     $query->select(DB::raw(1))
                         ->from('documentUserPermissions')
                         ->whereRaw('documentUserPermissions.documentId = documents.id')
-                        ->where('documentUserPermissions.userId', '=', $userId)
-                        ->where(function ($query) {
-                            $query->where('documentUserPermissions.isTimeBound', '=', '0')
-                                ->orWhere(function ($query) {
-                                    $date = date('Y-m-d');
-                                    $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-                                    $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-                                    $query->where('documentUserPermissions.isTimeBound', '=', '1')
-                                        ->whereDate('documentUserPermissions.startDate', '<=', $startDate)
-                                        ->whereDate('documentUserPermissions.endDate', '>=', $endDate);
-                                });
-                        });
-                })->orWhereExists(function ($query) use ($userRoles) {
-                    $query->select(DB::raw(1))
-                        ->from('documentRolePermissions')
-                        ->whereRaw('documentRolePermissions.documentId = documents.id')
-                        ->whereIn('documentRolePermissions.roleId', $userRoles)
-                        ->where(function ($query) {
-                            $query->where('documentRolePermissions.isTimeBound', '=', '0')
-                                ->orWhere(function ($query) {
-                                    $date = date('Y-m-d');
-                                    $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-                                    $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-                                    $query->where('documentRolePermissions.isTimeBound', '=', '1')
-                                        ->whereDate('documentRolePermissions.startDate', '<=', $startDate)
-                                        ->whereDate('documentRolePermissions.endDate', '>=', $endDate);
-                                });
-                        });
+                        ->where('documentUserPermissions.userId', '=', $userId);
                 });
             });
 
-        if ($attributes->categoryId) {
+        if (property_exists($attributes, 'categoryId') && $attributes->categoryId) {
             $query = $query->where('categoryId', $attributes->categoryId);
         }
 
-        if ($attributes->name) {
-            $query = $query->where('documents.name', 'like', '%' . $attributes->name . '%')
-                ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+        if (property_exists($attributes, 'name') && $attributes->name) {
+            $query = $query->where(function ($q) use ($attributes) {
+                $q->where('documents.name', 'like', '%' . $attributes->name . '%')
+                  ->orWhere('documents.description',  'like', '%' . $attributes->name . '%');
+            });
         }
 
-        if ($attributes->metaTags) {
+        if (property_exists($attributes, 'metaTags') && $attributes->metaTags) {
             $metaTags = $attributes->metaTags;
             $query = $query->whereExists(function ($query) use ($metaTags) {
                 $query->select(DB::raw(1))
@@ -493,46 +485,16 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
     public function getDocumentByCategory()
     {
         $userId = Auth::parseToken()->getPayload()->get('userId');
-        $userRoles = UserRoles::select('roleId')
-            ->where('userId', $userId)
-            ->get();
 
         $query = Documents::select(['documents.categoryId', 'categories.name as categoryName',  DB::raw('count(*) as documentCount')])
             ->join('categories', 'documents.categoryId', '=', 'categories.id')
             ->join('users', 'documents.createdBy', '=', 'users.id')
-            ->where(function ($query) use ($userId, $userRoles) {
+            ->where(function ($query) use ($userId) {
                 $query->whereExists(function ($query) use ($userId) {
                     $query->select(DB::raw(1))
                         ->from('documentUserPermissions')
                         ->whereRaw('documentUserPermissions.documentId = documents.id')
-                        ->where('documentUserPermissions.userId', '=', $userId)
-                        ->where(function ($query) {
-                            $query->where('documentUserPermissions.isTimeBound', '=', '0')
-                                ->orWhere(function ($query) {
-                                    $date = date('Y-m-d');
-                                    $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-                                    $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-                                    $query->where('documentUserPermissions.isTimeBound', '=', '1')
-                                        ->whereDate('documentUserPermissions.startDate', '<=', $startDate)
-                                        ->whereDate('documentUserPermissions.endDate', '>=', $endDate);
-                                });
-                        });
-                })->orWhereExists(function ($query) use ($userRoles) {
-                    $query->select(DB::raw(1))
-                        ->from('documentRolePermissions')
-                        ->whereRaw('documentRolePermissions.documentId = documents.id')
-                        ->whereIn('documentRolePermissions.roleId', $userRoles)
-                        ->where(function ($query) {
-                            $query->where('documentRolePermissions.isTimeBound', '=', '0')
-                                ->orWhere(function ($query) {
-                                    $date = date('Y-m-d');
-                                    $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-                                    $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-                                    $query->where('documentRolePermissions.isTimeBound', '=', '1')
-                                        ->whereDate('documentRolePermissions.startDate', '<=', $startDate)
-                                        ->whereDate('documentRolePermissions.endDate', '>=', $endDate);
-                                });
-                        });
+                        ->where('documentUserPermissions.userId', '=', $userId);
                 });
             });
 
@@ -544,44 +506,14 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
     public function getDocumentbyId($id)
     {
         $userId = Auth::parseToken()->getPayload()->get('userId');
-        $userRoles = UserRoles::select('roleId')
-            ->where('userId', $userId)
-            ->get();
         $query = Documents::select(['documents.*'])
             ->where('documents.id',  '=', $id)
-            ->where(function ($query) use ($userId, $userRoles, $id) {
+            ->where(function ($query) use ($userId, $id) {
                 $query->whereExists(function ($query) use ($userId, $id) {
                     $query->select(DB::raw(1))
                         ->from('documentUserPermissions')
                         ->where('documentUserPermissions.documentId', '=', $id)
-                        ->where('documentUserPermissions.userId', '=', $userId)
-                        ->where(function ($query) {
-                            $query->where('documentUserPermissions.isTimeBound', '=', '0')
-                                ->orWhere(function ($query) {
-                                    $date = date('Y-m-d');
-                                    $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-                                    $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-                                    $query->where('documentUserPermissions.isTimeBound', '=', '1')
-                                        ->whereDate('documentUserPermissions.startDate', '<=', $startDate)
-                                        ->whereDate('documentUserPermissions.endDate', '>=', $endDate);
-                                });
-                        });
-                })->orWhereExists(function ($query) use ($userRoles, $id) {
-                    $query->select(DB::raw(1))
-                        ->from('documentRolePermissions')
-                        ->where('documentRolePermissions.documentId', '=', $id)
-                        ->whereIn('documentRolePermissions.roleId', $userRoles)
-                        ->where(function ($query) {
-                            $query->where('documentRolePermissions.isTimeBound', '=', '0')
-                                ->orWhere(function ($query) {
-                                    $date = date('Y-m-d');
-                                    $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-                                    $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-                                    $query->where('documentRolePermissions.isTimeBound', '=', '1')
-                                        ->whereDate('documentRolePermissions.startDate', '<=', $startDate)
-                                        ->whereDate('documentRolePermissions.endDate', '>=', $endDate);
-                                });
-                        });
+                        ->where('documentUserPermissions.userId', '=', $userId);
                 });
             });
 
@@ -591,49 +523,12 @@ class DocumentRepository extends BaseRepository implements DocumentRepositoryInt
             return null;
         }
 
-        $docUserPermissionQuery = DocumentUserPermissions::where('documentUserPermissions.documentId',  '=', $id)
+        $userHasDownloadPerm = DocumentUserPermissions::where('documentUserPermissions.documentId', '=', $id)
             ->where('documentUserPermissions.userId', '=', $userId)
             ->where('documentUserPermissions.isAllowDownload', '=', true)
-            ->where(function ($query) {
-                $query->where('documentUserPermissions.isTimeBound', '=', '0')
-                    ->orWhere(function ($query) {
-                        $date = date('Y-m-d');
-                        $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-                        $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-                        $query->where('documentUserPermissions.isTimeBound', '=', '1')
-                            ->whereDate('documentUserPermissions.startDate', '<=', $startDate)
-                            ->whereDate('documentUserPermissions.endDate', '>=', $endDate);
-                    });
-            });
+            ->exists();
 
-        $userPermissionCount = $docUserPermissionQuery->count();
-        if ($userPermissionCount > 0) {
-            $document['isAllowDownload'] = true;
-            return $document;
-        }
-
-        $docRolePermissionQuery = DocumentRolePermissions::where('documentRolePermissions.documentId',  '=', $id)
-            ->where('documentRolePermissions.isAllowDownload', '=', true)
-            ->whereIn('documentRolePermissions.roleId', $userRoles)
-            ->where(function ($query) {
-                $query->where('documentRolePermissions.isTimeBound', '=', '0')
-                    ->orWhere(function ($query) {
-                        $date = date('Y-m-d');
-                        $startDate = Carbon::createFromFormat('Y-m-d', $date)->startOfDay();
-                        $endDate = Carbon::createFromFormat('Y-m-d', $date)->endOfDay();
-                        $query->where('documentRolePermissions.isTimeBound', '=', '1')
-                            ->whereDate('documentRolePermissions.startDate', '<=', $startDate)
-                            ->whereDate('documentRolePermissions.endDate', '>=', $endDate);
-                    });
-            });
-
-        $rolePermissionCount = $docRolePermissionQuery->count();
-        if ($rolePermissionCount > 0) {
-            $document['isAllowDownload'] = true;
-            return $document;
-        } else {
-            $document['isAllowDownload'] = false;
-            return $document;
-        }
+        $document['isAllowDownload'] = $userHasDownloadPerm;
+        return $document;
     }
 }

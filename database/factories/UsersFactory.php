@@ -27,7 +27,6 @@ class UsersFactory extends Factory
             'twoFactorEnabled' => false,
             'lockoutEnabled' => false,
             'accessFailedCount' => 0,
-            'direction' => fake()->randomElement(['North', 'South', 'East', 'West']),
         ];
     }
 }

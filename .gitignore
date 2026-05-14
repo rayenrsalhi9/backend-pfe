@@ -162,6 +162,16 @@ Temporary Items
 *.orig
 *.tmp
 
+# Test artifacts
+test_output.txt
+
+# Backend npm (unused — frontend manages its own)
+package.json
+package-lock.json
+
+# Scratch / dev work
+scratch/
+
 # Package lock files (optional - uncomment if needed)
 # package-lock.json
 # yarn.lock

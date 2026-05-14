@@ -59,10 +59,18 @@ class UserController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json($validator->messages(), 409);
+            return response()->json($validator->messages(), 422);
         }
 
-        $request['password'] = Hash::make($request->password);
+        if ($request->password) {
+            $validator = Validator::make($request->all(), [
+                'password' => AuthController::passwordRules(false),
+            ]);
+            if ($validator->fails()) {
+                return response()->json($validator->messages(), 422);
+            }
+            $request->merge(['password' => Hash::make($request->password)]);
+        }
         return  response()->json($this->userRepository->createUser($request->all()), 201);
     }
 
@@ -93,7 +101,7 @@ class UserController extends Controller
         $model->phoneNumber = $request->phoneNumber;
         $model->userName = $request->userName;
         $model->email = $request->email;
-        $model->avatar = $request->avatar;
+        $model->avatar = $request->avatar ?? $model->avatar;
         $model->direction = $request->direction;
 
         return  response()->json($this->userRepository->updateUser($model, $id, $request['roleIds']), 200);
@@ -116,7 +124,7 @@ class UserController extends Controller
     {
         $request->validate([
             'email' => 'required|email|exists:users',
-            'password' => 'required'
+            'password' => AuthController::passwordRules()
         ]);
 
         $user = Users::where('email', $request->email)
@@ -129,7 +137,7 @@ class UserController extends Controller
     {
         $request->validate([
             'oldPassword' => 'required',
-            'newPassword' => 'required',
+            'newPassword' => AuthController::passwordRules(),
         ]);
 
         if (!(Hash::check($request->get('oldPassword'), Auth::user()->password))) {
@@ -155,20 +163,34 @@ class UserController extends Controller
 
    
     public function getAllPublic(Request $request)
-    
     {
-      
+        $user = Auth::user();
         $limit = $request->limit;
         $query = Articles::orderBy('created_at', 'DESC')
             ->with('category', 'creator')
-            ->where('privacy', 'public') // Seulement les articles publics
+            ->where(function ($query) use ($user) {
+                $query->where('privacy', 'public');
+                if ($user) {
+                    $query->orWhere(function ($query) use ($user) {
+                        $query->where('privacy', 'private')
+                            ->where(function ($query) use ($user) {
+                                $query->whereHas('users', function ($query) use ($user) {
+                                    $query->where('user_id', $user->id);
+                                });
+                                $query->orWhere('created_by', $user->id);
+                            });
+                    });
+                }
+            })
             ->when($limit, function ($query) use ($limit) {
                 return $query->take($limit);
             });
 
         if ($request->name) {
-            $query->where('title', 'like', '%' . $request->name . '%')
-                  ->orWhere('short_text', 'like', '%' . $request->name . '%');
+            $query->where(function ($query) use ($request) {
+                $query->where('title', 'like', '%' . $request->name . '%')
+                      ->orWhere('short_text', 'like', '%' . $request->name . '%');
+            });
         }
 
         if ($request->articleCategoryId) {

@@ -84,4 +84,25 @@ trait CacheableTrait
             \Log::error('Cache flush failed: ' . $e->getMessage());
         }
     }
+
+    protected function normalizeRequestParams(array $params): string
+    {
+        $normalized = $this->recursiveSort($params);
+        $encoded = json_encode($normalized);
+        if ($encoded === false) {
+            $encoded = serialize($normalized);
+        }
+        return md5($encoded);
+    }
+
+    private function recursiveSort(array $array): array
+    {
+        ksort($array);
+        foreach ($array as $key => $value) {
+            if (is_array($value)) {
+                $array[$key] = $this->recursiveSort($value);
+            }
+        }
+        return $array;
+    }
 }

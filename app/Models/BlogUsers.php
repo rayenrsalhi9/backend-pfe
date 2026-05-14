@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
-class ArticleUsers extends Model
+class BlogUsers extends Model
 {
     use HasFactory;
     use Notifiable, Uuids;
@@ -17,20 +17,18 @@ class ArticleUsers extends Model
      *
      * @var string
      */
-    protected $table = 'article_users';
-
+    protected $table = 'blog_users';
 
     /**
      * The attributes that are mass assignable.
      *
      * @var array
      */
-    protected $fillable = ['article_id','user_id'];
+    protected $fillable = ['blog_id', 'user_id'];
 
-
-    public function article()
+    public function blog()
     {
-        return $this->belongsTo(Articles::class, 'article_id', 'id');
+        return $this->belongsTo(Blogs::class, 'blog_id', 'id');
     }
 
     public function user()
