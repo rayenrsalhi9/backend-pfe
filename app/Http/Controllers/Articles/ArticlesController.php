@@ -288,7 +288,7 @@ class ArticlesController extends Controller
 
     $this->flushCacheTag('articles');
 
-    return response()->json('successfully deleted', 200);
+    return response()->json(['success' => true, 'message' => 'successfully deleted'], 200);
   }
 
   function addComment($id, Request $request)

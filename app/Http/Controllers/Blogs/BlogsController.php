@@ -362,7 +362,7 @@ class BlogsController extends Controller
 
         $this->flushCacheTag('blogs');
 
-        return response()->json('successfully deleted', 200);
+        return response()->json(['success' => true, 'message' => 'successfully deleted'], 200);
     }
 
     public function addComment($id, Request $request)

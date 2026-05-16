@@ -228,7 +228,7 @@ class ForumsController extends Controller
 
         $this->flushCacheTag('forums');
 
-        return response()->json('successfully deleted', 200);
+        return response()->json(['success' => true, 'message' => 'successfully deleted'], 200);
     }
 
     function addComment($id, Request $request)

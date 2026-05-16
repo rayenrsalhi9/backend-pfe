@@ -90,6 +90,6 @@ class BlogCategoriesController extends Controller
 
         $category->delete();
 
-        return response()->json('successfully deleted', 200);
+        return response()->json(['success' => true, 'message' => 'successfully deleted'], 200);
     }
 }
