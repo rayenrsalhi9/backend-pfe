@@ -42,8 +42,17 @@ class ForumCategoriesController extends Controller
         }
     }
 
-    function getOne()
+    function getOne($id)
     {
+        try {
+            $category = ForumCategories::where('id', $id)->first();
+            if (!$category) {
+                return response()->json(['message' => 'Category not found'], 404);
+            }
+            return response()->json($category, 200);
+        } catch (\Throwable $th) {
+            return response($th->getMessage(), 500);
+        }
     }
 
     function update($id, Request $request)
@@ -90,6 +99,6 @@ class ForumCategoriesController extends Controller
 
         $category->delete();
 
-        return response()->json('successfully deleted', 200);
+        return response()->json(['success' => true, 'message' => 'successfully deleted'], 200);
     }
 }

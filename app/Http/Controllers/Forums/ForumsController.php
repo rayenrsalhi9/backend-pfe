@@ -8,7 +8,7 @@ use App\Traits\CacheableTrait;
 use App\Models\ForumComments;
 use App\Models\ForumReactions;
 use App\Models\Forums;
-use App\Models\Tags;
+
 use App\Models\ForumUsers;
 use App\Models\ResponseAuditTrails;
 use Carbon\Carbon;
@@ -101,7 +101,6 @@ class ForumsController extends Controller
                 'reactions.user',
                 'comments',
                 'comments.user',
-                'tags',
                 'allowedUsers.user'
             )
             ->withCount(['reactions', 'comments'])
@@ -126,11 +125,9 @@ class ForumsController extends Controller
     function create(Request $request)
     {
         $user = Auth::user();
-        $rawTags = $request->tags;
-        $tags = is_array($rawTags) ? $rawTags : [];
 
         try {
-            DB::transaction(function () use ($request, $user, $tags, &$response) {
+            DB::transaction(function () use ($request, $user, &$response) {
                 $forum = new Forums();
                 $forum->title = $request->title;
                 $forum->content = $request->input('content');
@@ -155,20 +152,7 @@ class ForumsController extends Controller
                     }
                 }
 
-                if (!empty($tags)) {
-                    foreach ($tags as $tag) {
-                        if (!isset($tag['label']) || !is_string($tag['label'])) {
-                            continue;
-                        }
-                        $forumTag = new Tags();
-                        $forumTag->forum_id = $forum->id;
-                        $forumTag->metatag = $tag['label'];
-                        $forumTag->created_by = $user->id;
-                        $forumTag->save();
-                    }
-                }
-
-                $response = $forum->load('category', 'creator', 'tags', 'allowedUsers');
+                $response = $forum->load('category', 'creator', 'allowedUsers');
             });
 
             $this->flushCacheTag('forums');
@@ -182,8 +166,6 @@ class ForumsController extends Controller
     function update($id, Request $request)
     {
         $user = Auth::user();
-        $rawTags = $request->tags;
-        $tags = (is_array($rawTags)) ? $rawTags : null;
 
         try {
             $forum = Forums::where('id', $id)->first();
@@ -191,7 +173,7 @@ class ForumsController extends Controller
                 return response()->json(['message' => 'Not found'], 404);
             }
 
-            DB::transaction(function () use ($forum, $id, $request, $user, $tags, &$response) {
+            DB::transaction(function () use ($forum, $id, $request, $user, &$response) {
                 $forum->title = $request->title;
                 $forum->content = $request->input('content');
                 $forum->category_id = $request->category;
@@ -222,24 +204,7 @@ class ForumsController extends Controller
                     }
                 }
 
-                if ($tags !== null) {
-                    Tags::where('forum_id', $forum->id)->delete();
-
-                    if (!empty($tags)) {
-                        foreach ($tags as $tag) {
-                            if (!isset($tag['label']) || !is_string($tag['label'])) {
-                                continue;
-                            }
-                            $forumTag = new Tags();
-                            $forumTag->forum_id = $forum->id;
-                            $forumTag->metatag = $tag['label'];
-                            $forumTag->created_by = $user->id;
-                            $forumTag->save();
-                        }
-                    }
-                }
-
-                $response = $forum->load('category', 'creator', 'tags', 'allowedUsers');
+                $response = $forum->load('category', 'creator', 'allowedUsers');
             });
 
             $this->flushCacheTag('forums');
@@ -263,7 +228,7 @@ class ForumsController extends Controller
 
         $this->flushCacheTag('forums');
 
-        return response()->json('successfully deleted', 200);
+        return response()->json(['success' => true, 'message' => 'successfully deleted'], 200);
     }
 
     function addComment($id, Request $request)

@@ -404,6 +404,6 @@ class SurverysController extends Controller
 
         $this->flushCacheTag('surveys');
 
-        return response()->json('successfully deleted', 200);
+        return response()->json(['success' => true, 'message' => 'successfully deleted'], 200);
     }
 }

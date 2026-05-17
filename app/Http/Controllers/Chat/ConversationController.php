@@ -156,7 +156,7 @@ class ConversationController extends Controller
             $user = Auth::user();
             $conversation = Conversation::where('id', $request->conversation['id'])->with('users')->first();
             if (! $conversation) {
-                return response()->json('conversation not found', 404);
+                return response()->json(['success' => false, 'message' => 'conversation not found'], 404);
             }
 
             $isUserInConversation = ConversationUser::where([
@@ -572,7 +572,7 @@ class ConversationController extends Controller
 
             $conversation->delete();
 
-            return response()->json('conversation deleted', 200);
+            return response()->json(['success' => true, 'message' => 'conversation deleted'], 200);
         } catch (\Throwable $th) {
             \Illuminate\Support\Facades\Log::error($th);
 
