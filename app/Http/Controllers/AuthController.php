@@ -299,7 +299,6 @@ class AuthController extends Controller
 
     public function forgot(Request $request)
     {
-
         $validator = Validator::make($request->all(), [
             'email' => ['required', 'string', 'email', 'max:255'],
         ]);
@@ -311,38 +310,26 @@ class AuthController extends Controller
             ], 422);
         }
 
-        $verify = User::where('email', $request->all()['email'])->exists();
+        $email = $request->all()['email'];
+        $userExists = User::where('email', $email)->exists();
 
-        if ($verify) {
-            $verify2 = DB::table('password_resets')->where([
-                ['email', $request->all()['email']],
-            ]);
+        if ($userExists) {
+            DB::table('password_resets')->where('email', $email)->delete();
 
-            if ($verify2->exists()) {
-                $verify2->delete();
-            }
-
-            $token = random_int(100000, 999999);
-            $password_reset = DB::table('password_resets')->insert([
-                'email' => $request->all()['email'],
-                'token' => $token,
+            $pin = random_int(100000, 999999);
+            DB::table('password_resets')->insert([
+                'email' => $email,
+                'token' => Hash::make($pin),
                 'created_at' => Carbon::now(),
             ]);
 
-            if ($password_reset) {
-                Mail::to($request->all()['email'])->send(new ResetPassword($token));
-
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Please check your email for a 6 digit pin',
-                ], 200);
-            }
-        } else {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'This email does not exist',
-            ], 400);
+            Mail::to($email)->send(new ResetPassword($pin));
         }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'If this email exists, a 6-digit PIN has been sent to it',
+        ], 200);
     }
 
     public function verifyPin(Request $request)
@@ -356,46 +343,48 @@ class AuthController extends Controller
             return new JsonResponse(['status' => 'error', 'message' => $validator->errors()], 422);
         }
 
-        $check = DB::table('password_resets')->where([
-            ['email', $request->email],
-            ['token', $request->token],
-        ]);
+        $record = DB::table('password_resets')->where('email', $request->email)->first();
 
-        if ($check->exists()) {
+        if (!$record || !Hash::check($request->token, $record->token)) {
+            return new JsonResponse(
+                ['status' => 'error', 'message' => 'Invalid token'],
+                401
+            );
+        }
 
-            $difference = Carbon::now()->diffInSeconds($check->first()->created_at);
-            if ($difference > 3600) {
-                return new JsonResponse(['status' => 'error', 'message' => 'Token Expired'], 400);
-            }
+        $difference = Carbon::now()->diffInSeconds($record->created_at);
+        if ($difference > 3600) {
+            return new JsonResponse(['status' => 'error', 'message' => 'Token Expired'], 400);
+        }
 
-            DB::table('password_resets')->where([
-                ['email', $request->email],
-                ['token', $request->token],
-            ])->delete();
+        try {
+            DB::beginTransaction();
 
-            $token = Hash::make($request->token.':'.$request->email);
+            DB::table('password_resets')->where('email', $request->email)->delete();
+
+            $newToken = Hash::make($request->token.':'.$request->email);
 
             DB::table('password_resets')->insert([
                 'email' => $request->email,
-                'token' => $token,
+                'token' => $newToken,
                 'created_at' => Carbon::now(),
             ]);
+
+            DB::commit();
 
             return new JsonResponse(
                 [
                     'status' => 'success',
                     'message' => 'You can now reset your password',
-                    'token' => $token,
+                    'token' => $newToken,
                 ],
                 200
             );
-        } else {
+        } catch (\Exception $e) {
+            DB::rollBack();
             return new JsonResponse(
-                [
-                    'status' => 'error',
-                    'message' => 'Invalid token',
-                ],
-                401
+                ['status' => 'error', 'message' => 'Verification failed. Please try again.'],
+                500
             );
         }
     }
@@ -412,27 +401,36 @@ class AuthController extends Controller
             return new JsonResponse(['status' => 'error', 'message' => $validator->errors()], 422);
         }
 
-        $check = DB::table('password_resets')->where([
-            ['email', $request->email],
-            ['token', $request->token],
-        ]);
+        $record = DB::table('password_resets')->where('email', $request->email)->first();
 
-        if (! $check->exists()) {
-            return new JsonResponse(['status' => 'error', 'message' => 'Token Expired'], 400);
+        if (! $record || ! Hash::check($request->token, $record->token)) {
+            return new JsonResponse(['status' => 'error', 'message' => 'Invalid or expired token'], 400);
         }
 
-        $check->delete();
+        try {
+            DB::beginTransaction();
 
-        $user = Users::where('email', $request->email)
-            ->update(['password' => Hash::make($request->password)]);
+            DB::table('password_resets')->where('email', $request->email)->delete();
 
-        return new JsonResponse(
-            [
-                'status' => 'success',
-                'message' => 'Your password has been reset',
-            ],
-            200
-        );
+            Users::where('email', $request->email)
+                ->update(['password' => Hash::make($request->password)]);
+
+            DB::commit();
+
+            return new JsonResponse(
+                [
+                    'status' => 'success',
+                    'message' => 'Your password has been reset',
+                ],
+                200
+            );
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return new JsonResponse(
+                ['status' => 'error', 'message' => 'Password reset failed. Please try again.'],
+                500
+            );
+        }
     }
 
     public function register(Request $request)
