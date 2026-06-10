@@ -7,14 +7,12 @@ use App\Models\LoginAudit;
 use App\Models\Users;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use Carbon\Carbon;
-use Illuminate\Foundation\Auth\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
@@ -311,20 +309,17 @@ class AuthController extends Controller
         }
 
         $email = $request->all()['email'];
-        $userExists = User::where('email', $email)->exists();
 
-        if ($userExists) {
-            DB::table('password_resets')->where('email', $email)->delete();
+        DB::table('password_resets')->where('email', $email)->delete();
 
-            $pin = random_int(100000, 999999);
-            DB::table('password_resets')->insert([
-                'email' => $email,
-                'token' => Hash::make($pin),
-                'created_at' => Carbon::now(),
-            ]);
+        $pin = random_int(100000, 999999);
+        DB::table('password_resets')->insert([
+            'email' => $email,
+            'token' => Hash::make($pin),
+            'created_at' => Carbon::now(),
+        ]);
 
-            Mail::to($email)->send(new ResetPassword($pin));
-        }
+        Mail::to($email)->queue(new ResetPassword($pin));
 
         return response()->json([
             'status' => 'success',
@@ -362,11 +357,11 @@ class AuthController extends Controller
 
             DB::table('password_resets')->where('email', $request->email)->delete();
 
-            $newToken = Hash::make($request->token.':'.$request->email);
+            $rawToken = $request->token.':'.$request->email;
 
             DB::table('password_resets')->insert([
                 'email' => $request->email,
-                'token' => $newToken,
+                'token' => Hash::make($rawToken),
                 'created_at' => Carbon::now(),
             ]);
 
@@ -376,7 +371,7 @@ class AuthController extends Controller
                 [
                     'status' => 'success',
                     'message' => 'You can now reset your password',
-                    'token' => $newToken,
+                    'token' => $rawToken,
                 ],
                 200
             );
@@ -407,13 +402,26 @@ class AuthController extends Controller
             return new JsonResponse(['status' => 'error', 'message' => 'Invalid or expired token'], 400);
         }
 
+        $expiryMinutes = config('auth.passwords.users.expire', 60);
+        if (Carbon::parse($record->created_at)->addMinutes($expiryMinutes)->isPast()) {
+            return new JsonResponse(['status' => 'error', 'message' => 'Invalid or expired token'], 400);
+        }
+
         try {
             DB::beginTransaction();
 
-            DB::table('password_resets')->where('email', $request->email)->delete();
-
-            Users::where('email', $request->email)
+            $affected = Users::where('email', $request->email)
                 ->update(['password' => Hash::make($request->password)]);
+
+            if ($affected === 0) {
+                DB::rollBack();
+                return new JsonResponse(
+                    ['status' => 'error', 'message' => 'Password reset failed. Please try again.'],
+                    500
+                );
+            }
+
+            DB::table('password_resets')->where('email', $request->email)->delete();
 
             DB::commit();
 
