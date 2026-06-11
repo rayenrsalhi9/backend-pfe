@@ -91,19 +91,21 @@ class UserRepository extends BaseRepository implements UserRepositoryInterface
 
 
 
-    public function updateUser($model, $id, $userRoles)
+    public function updateUser($model, $id, $userRoles = [])
     {
         try {
             DB::beginTransaction();
-            $userRoles1 =  UserRoles::where('userId', '=', $id)->get('id');
-            UserRoles::destroy($userRoles1);
-            $result = $this->parseResult($model);
 
-            foreach ($userRoles as $roleId) {
-                UserRoles::create(array(
-                    'userId' =>   $result->id,
-                    'roleId' =>  $roleId,
-                ));
+            if (!empty($userRoles)) {
+                $userRoles1 =  UserRoles::where('userId', '=', $id)->get('id');
+                UserRoles::destroy($userRoles1);
+
+                foreach ($userRoles as $roleId) {
+                    UserRoles::create(array(
+                        'userId' =>   $id,
+                        'roleId' =>  $roleId,
+                    ));
+                }
             }
 
             $model->save();

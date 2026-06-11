@@ -104,7 +104,7 @@ class UserController extends Controller
         $model->avatar = $request->avatar ?? $model->avatar;
         $model->direction = $request->direction;
 
-        return  response()->json($this->userRepository->updateUser($model, $id, $request['roleIds']), 200);
+        return  response()->json($this->userRepository->updateUser($model, $id), 200);
     }
 
     public function destroy($id)
