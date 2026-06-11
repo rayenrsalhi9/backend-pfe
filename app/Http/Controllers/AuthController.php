@@ -310,14 +310,17 @@ class AuthController extends Controller
 
         $email = $request->all()['email'];
 
-        DB::table('password_resets')->where('email', $email)->delete();
-
         $pin = random_int(100000, 999999);
-        DB::table('password_resets')->insert([
-            'email' => $email,
-            'token' => Hash::make($pin),
-            'created_at' => Carbon::now(),
-        ]);
+
+        DB::transaction(function () use ($email, $pin) {
+            DB::table('password_resets')->updateOrInsert(
+                ['email' => $email],
+                [
+                    'token' => Hash::make($pin),
+                    'created_at' => Carbon::now(),
+                ]
+            );
+        });
 
         Mail::to($email)->queue(new ResetPassword($pin));
 
@@ -338,22 +341,28 @@ class AuthController extends Controller
             return new JsonResponse(['status' => 'error', 'message' => $validator->errors()], 422);
         }
 
-        $record = DB::table('password_resets')->where('email', $request->email)->first();
-
-        if (!$record || !Hash::check($request->token, $record->token)) {
-            return new JsonResponse(
-                ['status' => 'error', 'message' => 'Invalid token'],
-                401
-            );
-        }
-
-        $difference = Carbon::now()->diffInSeconds($record->created_at);
-        if ($difference > 3600) {
-            return new JsonResponse(['status' => 'error', 'message' => 'Token Expired'], 400);
-        }
-
         try {
             DB::beginTransaction();
+
+            $record = DB::table('password_resets')
+                ->where('email', $request->email)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$record || !Hash::check($request->token, $record->token)) {
+                DB::rollBack();
+                return new JsonResponse(
+                    ['status' => 'error', 'message' => 'Invalid token'],
+                    401
+                );
+            }
+
+            $expiryMinutes = config('auth.passwords.users.expire', 60);
+            $difference = Carbon::now()->diffInSeconds($record->created_at);
+            if ($difference > $expiryMinutes * 60) {
+                DB::rollBack();
+                return new JsonResponse(['status' => 'error', 'message' => 'Token Expired'], 400);
+            }
 
             DB::table('password_resets')->where('email', $request->email)->delete();
 
@@ -396,19 +405,24 @@ class AuthController extends Controller
             return new JsonResponse(['status' => 'error', 'message' => $validator->errors()], 422);
         }
 
-        $record = DB::table('password_resets')->where('email', $request->email)->first();
-
-        if (! $record || ! Hash::check($request->token, $record->token)) {
-            return new JsonResponse(['status' => 'error', 'message' => 'Invalid or expired token'], 400);
-        }
-
-        $expiryMinutes = config('auth.passwords.users.expire', 60);
-        if (Carbon::parse($record->created_at)->addMinutes($expiryMinutes)->isPast()) {
-            return new JsonResponse(['status' => 'error', 'message' => 'Invalid or expired token'], 400);
-        }
-
         try {
             DB::beginTransaction();
+
+            $record = DB::table('password_resets')
+                ->where('email', $request->email)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $record || ! Hash::check($request->token, $record->token)) {
+                DB::rollBack();
+                return new JsonResponse(['status' => 'error', 'message' => 'Invalid or expired token'], 400);
+            }
+
+            $expiryMinutes = config('auth.passwords.users.expire', 60);
+            if (Carbon::parse($record->created_at)->addMinutes($expiryMinutes)->isPast()) {
+                DB::rollBack();
+                return new JsonResponse(['status' => 'error', 'message' => 'Invalid or expired token'], 400);
+            }
 
             $affected = Users::where('email', $request->email)
                 ->update(['password' => Hash::make($request->password)]);
