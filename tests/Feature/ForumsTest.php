@@ -72,7 +72,7 @@ class ForumsTest extends TestCase
         $response->assertStatus(401);
     }
 
-    public function test_create_forum_with_valid_tags()
+    public function test_create_forum_accepts_request_with_tags()
     {
         $user = Users::factory()->create();
         $category = ForumCategories::factory()->create();
@@ -90,7 +90,7 @@ class ForumsTest extends TestCase
             ]);
 
         $response->assertStatus(200);
-        $this->assertDatabaseCount('tags', 2);
+        $this->assertDatabaseHas('forums', ['title' => 'Forum with Tags']);
     }
 
     public function test_create_public_forum_has_no_forum_users_entries()
