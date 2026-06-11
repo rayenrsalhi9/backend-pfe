@@ -7,14 +7,12 @@ use App\Models\LoginAudit;
 use App\Models\Users;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use Carbon\Carbon;
-use Illuminate\Foundation\Auth\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
@@ -299,7 +297,6 @@ class AuthController extends Controller
 
     public function forgot(Request $request)
     {
-
         $validator = Validator::make($request->all(), [
             'email' => ['required', 'string', 'email', 'max:255'],
         ]);
@@ -311,38 +308,26 @@ class AuthController extends Controller
             ], 422);
         }
 
-        $verify = User::where('email', $request->all()['email'])->exists();
+        $email = $request->all()['email'];
 
-        if ($verify) {
-            $verify2 = DB::table('password_resets')->where([
-                ['email', $request->all()['email']],
-            ]);
+        $pin = random_int(100000, 999999);
 
-            if ($verify2->exists()) {
-                $verify2->delete();
-            }
+        DB::transaction(function () use ($email, $pin) {
+            DB::table('password_resets')->updateOrInsert(
+                ['email' => $email],
+                [
+                    'token' => Hash::make($pin),
+                    'created_at' => Carbon::now(),
+                ]
+            );
+        });
 
-            $token = random_int(100000, 999999);
-            $password_reset = DB::table('password_resets')->insert([
-                'email' => $request->all()['email'],
-                'token' => $token,
-                'created_at' => Carbon::now(),
-            ]);
+        Mail::to($email)->queue(new ResetPassword($pin));
 
-            if ($password_reset) {
-                Mail::to($request->all()['email'])->send(new ResetPassword($token));
-
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Please check your email for a 6 digit pin',
-                ], 200);
-            }
-        } else {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'This email does not exist',
-            ], 400);
-        }
+        return response()->json([
+            'status' => 'success',
+            'message' => 'If this email exists, a 6-digit PIN has been sent to it',
+        ], 200);
     }
 
     public function verifyPin(Request $request)
@@ -356,46 +341,54 @@ class AuthController extends Controller
             return new JsonResponse(['status' => 'error', 'message' => $validator->errors()], 422);
         }
 
-        $check = DB::table('password_resets')->where([
-            ['email', $request->email],
-            ['token', $request->token],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        if ($check->exists()) {
+            $record = DB::table('password_resets')
+                ->where('email', $request->email)
+                ->lockForUpdate()
+                ->first();
 
-            $difference = Carbon::now()->diffInSeconds($check->first()->created_at);
-            if ($difference > 3600) {
+            if (!$record || !Hash::check($request->token, $record->token)) {
+                DB::rollBack();
+                return new JsonResponse(
+                    ['status' => 'error', 'message' => 'Invalid token'],
+                    401
+                );
+            }
+
+            $expiryMinutes = config('auth.passwords.users.expire', 60);
+            $difference = Carbon::now()->diffInSeconds($record->created_at);
+            if ($difference > $expiryMinutes * 60) {
+                DB::rollBack();
                 return new JsonResponse(['status' => 'error', 'message' => 'Token Expired'], 400);
             }
 
-            DB::table('password_resets')->where([
-                ['email', $request->email],
-                ['token', $request->token],
-            ])->delete();
+            DB::table('password_resets')->where('email', $request->email)->delete();
 
-            $token = Hash::make($request->token.':'.$request->email);
+            $rawToken = $request->token.':'.$request->email;
 
             DB::table('password_resets')->insert([
                 'email' => $request->email,
-                'token' => $token,
+                'token' => Hash::make($rawToken),
                 'created_at' => Carbon::now(),
             ]);
+
+            DB::commit();
 
             return new JsonResponse(
                 [
                     'status' => 'success',
                     'message' => 'You can now reset your password',
-                    'token' => $token,
+                    'token' => $rawToken,
                 ],
                 200
             );
-        } else {
+        } catch (\Exception $e) {
+            DB::rollBack();
             return new JsonResponse(
-                [
-                    'status' => 'error',
-                    'message' => 'Invalid token',
-                ],
-                401
+                ['status' => 'error', 'message' => 'Verification failed. Please try again.'],
+                500
             );
         }
     }
@@ -412,27 +405,54 @@ class AuthController extends Controller
             return new JsonResponse(['status' => 'error', 'message' => $validator->errors()], 422);
         }
 
-        $check = DB::table('password_resets')->where([
-            ['email', $request->email],
-            ['token', $request->token],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        if (! $check->exists()) {
-            return new JsonResponse(['status' => 'error', 'message' => 'Token Expired'], 400);
+            $record = DB::table('password_resets')
+                ->where('email', $request->email)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $record || ! Hash::check($request->token, $record->token)) {
+                DB::rollBack();
+                return new JsonResponse(['status' => 'error', 'message' => 'Invalid or expired token'], 400);
+            }
+
+            $expiryMinutes = config('auth.passwords.users.expire', 60);
+            if (Carbon::parse($record->created_at)->addMinutes($expiryMinutes)->isPast()) {
+                DB::rollBack();
+                return new JsonResponse(['status' => 'error', 'message' => 'Invalid or expired token'], 400);
+            }
+
+            $affected = Users::where('email', $request->email)
+                ->update(['password' => Hash::make($request->password)]);
+
+            if ($affected === 0) {
+                DB::rollBack();
+                return new JsonResponse(
+                    ['status' => 'error', 'message' => 'Password reset failed. Please try again.'],
+                    500
+                );
+            }
+
+            DB::table('password_resets')->where('email', $request->email)->delete();
+
+            DB::commit();
+
+            return new JsonResponse(
+                [
+                    'status' => 'success',
+                    'message' => 'Your password has been reset',
+                ],
+                200
+            );
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return new JsonResponse(
+                ['status' => 'error', 'message' => 'Password reset failed. Please try again.'],
+                500
+            );
         }
-
-        $check->delete();
-
-        $user = Users::where('email', $request->email)
-            ->update(['password' => Hash::make($request->password)]);
-
-        return new JsonResponse(
-            [
-                'status' => 'success',
-                'message' => 'Your password has been reset',
-            ],
-            200
-        );
     }
 
     public function register(Request $request)

@@ -179,7 +179,7 @@ class AuthTest extends TestCase
         $response->assertStatus(200);
         $response->assertJson([
             'status' => 'success',
-            'message' => 'Please check your email for a 6 digit pin',
+            'message' => 'If this email exists, a 6-digit PIN has been sent to it',
         ]);
 
         $this->assertDatabaseHas('password_resets', [
@@ -187,16 +187,15 @@ class AuthTest extends TestCase
         ]);
     }
 
-    public function test_forgot_with_non_existent_email_returns_error()
+    public function test_forgot_with_non_existent_email_returns_success()
     {
         $response = $this->postJson('/api/auth/forgot', [
             'email' => 'nonexistent@example.com',
         ]);
 
-        $response->assertStatus(400);
+        $response->assertStatus(200);
         $response->assertJson([
-            'status' => 'error',
-            'message' => 'This email does not exist',
+            'status' => 'success',
         ]);
     }
 
@@ -221,7 +220,7 @@ class AuthTest extends TestCase
 
         DB::table('password_resets')->insert([
             'email' => 'test@example.com',
-            'token' => '123456',
+            'token' => Hash::make('123456'),
             'created_at' => Carbon::now(),
         ]);
 
@@ -240,6 +239,9 @@ class AuthTest extends TestCase
             'status' => 'success',
             'message' => 'You can now reset your password',
         ]);
+
+        $token = $response->json('token');
+        $this->assertEquals('123456:test@example.com', $token);
     }
 
     public function test_verify_pin_with_expired_token_returns_error()
@@ -250,7 +252,7 @@ class AuthTest extends TestCase
 
         DB::table('password_resets')->insert([
             'email' => 'test@example.com',
-            'token' => '123456',
+            'token' => Hash::make('123456'),
             'created_at' => Carbon::now()->subHours(2),
         ]);
 
@@ -295,16 +297,16 @@ class AuthTest extends TestCase
             'password' => bcrypt('OldPass1!'),
         ]);
 
-        $resetToken = Hash::make('123456:test@example.com');
+        $rawToken = '123456:test@example.com';
         DB::table('password_resets')->insert([
             'email' => 'test@example.com',
-            'token' => $resetToken,
+            'token' => Hash::make($rawToken),
             'created_at' => Carbon::now(),
         ]);
 
         $response = $this->postJson('/api/auth/reset-password', [
             'email' => 'test@example.com',
-            'token' => $resetToken,
+            'token' => $rawToken,
             'password' => 'NewPass@123',
         ]);
 
@@ -343,20 +345,47 @@ class AuthTest extends TestCase
             'email' => 'test@example.com',
         ]);
 
-        $resetToken = Hash::make('123456:test@example.com');
+        $rawToken = '123456:test@example.com';
         DB::table('password_resets')->insert([
             'email' => 'test@example.com',
-            'token' => $resetToken,
+            'token' => Hash::make($rawToken),
             'created_at' => Carbon::now(),
         ]);
 
         $response = $this->postJson('/api/auth/reset-password', [
             'email' => 'test@example.com',
-            'token' => $resetToken,
+            'token' => $rawToken,
             'password' => 'weak',
         ]);
 
         $response->assertStatus(422);
+    }
+
+    public function test_reset_password_with_expired_token_returns_error()
+    {
+        $user = Users::factory()->create([
+            'email' => 'test@example.com',
+        ]);
+
+        $rawToken = '123456:test@example.com';
+        $expiryMinutes = config('auth.passwords.users.expire', 60);
+        DB::table('password_resets')->insert([
+            'email' => 'test@example.com',
+            'token' => Hash::make($rawToken),
+            'created_at' => Carbon::now()->subMinutes($expiryMinutes + 1),
+        ]);
+
+        $response = $this->postJson('/api/auth/reset-password', [
+            'email' => 'test@example.com',
+            'token' => $rawToken,
+            'password' => 'NewPass@123',
+        ]);
+
+        $response->assertStatus(400);
+        $response->assertJson([
+            'status' => 'error',
+            'message' => 'Invalid or expired token',
+        ]);
     }
 
     /* ===========================================
